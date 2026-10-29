@@ -3797,7 +3797,8 @@ function pxRels(nph,idx){
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     +'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+r+'</Relationships>';
 }
-async function renderPptx(tplBytes, records, lang){
+/* extra = สไลด์ที่สร้างเสร็จแล้ว (XML) ต่อท้ายชุดสไลด์รายการ — V12.4 ใช้ใส่สไลด์ Dashboard */
+async function renderPptx(tplBytes, records, lang, extra){
   lang=lang||'th';
   const files=await zipRead(tplBytes);
   const td=new TextDecoder(), te=new TextEncoder();
@@ -3820,10 +3821,307 @@ async function renderPptx(tplBytes, records, lang){
     relAdd+=`<Relationship Id="${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${sn}.xml"/>`;
     ids+=`<p:sldId id="${255+sn}" r:id="${rid}"/>`;
   });
+  (extra||[]).forEach((xml,k)=>{
+    const sn=records.length+k+1;
+    files.set(`ppt/slides/slide${sn}.xml`, te.encode(xml));
+    files.set(`ppt/slides/_rels/slide${sn}.xml.rels`, te.encode(pxRels(0,sn-1)));
+    ctAdd+=`<Override PartName="/ppt/slides/slide${sn}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`;
+    const rid='rId'+(maxRid+sn);
+    relAdd+=`<Relationship Id="${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${sn}.xml"/>`;
+    ids+=`<p:sldId id="${255+sn}" r:id="${rid}"/>`;
+  });
   files.set('[Content_Types].xml', te.encode(ct.replace('</Types>',ctAdd+'</Types>')));
   files.set('ppt/_rels/presentation.xml.rels', te.encode(prels.replace('</Relationships>',relAdd+'</Relationships>')));
   files.set('ppt/presentation.xml', te.encode(px.replace('<p:sldIdLst/>','<p:sldIdLst>'+ids+'</p:sldIdLst>')));
   return zipWrite(files);
+}
+
+/* ============ V12.4 — สไลด์ Dashboard ต่อท้ายไฟล์ .pptx ============
+   วาดเป็นรูปทรงและตารางของ PowerPoint เอง (คมชัด แก้ไขต่อได้ ใช้ฟอนต์เดียวกับสไลด์อื่น)
+   คำนวณจากชุดรายการเดียวกับที่ส่งออก ด้วยหลักการเดียวกับหน้า Dashboard */
+const DX0=455613, DXW=PX_W-2*DX0, DYB=6700000;
+const DC={ink:'1F2937',mut:'6B7280',acc:'1F4E79',line:'D5DBE3',soft:'F4F6F9',track:'E9EDF2',un:'BFC5CD',
+  ok:'2E7D32',warn:'C55A11',crit:'C00000'};
+let dId=10;
+const dLvC=n=>n?LEVELS[n-1].color:DC.un;
+const dLvInk=n=>n?LEVELS[n-1].ink:DC.ink;
+/* ผสมสีกับขาว — p=1 สีเต็ม, p=0 ขาว */
+function dMix(hex,p){
+  return [0,2,4].map(i=>parseInt(hex.substr(i,2),16))
+    .map(v=>Math.round(255+(v-255)*p).toString(16).padStart(2,'0')).join('').toUpperCase();
+}
+function dP(runs,algn){
+  return '<a:p>'+(algn?'<a:pPr algn="'+algn+'"/>':'')
+    +runs.filter(r=>r&&r[0]!==''&&r[0]!=null).map(r=>pRun(String(r[0]),r[1],r[2],r[3]||DC.ink)).join('')+'</a:p>';
+}
+function dSp(x,y,w,h,o){
+  o=o||{};
+  const id=++dId, ins=o.ins==null?45720:o.ins;
+  const geom=o.geom||'rect';
+  const av=geom==='roundRect'?'<a:avLst><a:gd name="adj" fmla="val '+(o.adj||8000)+'"/></a:avLst>':'<a:avLst/>';
+  const fill=o.fill?'<a:solidFill><a:srgbClr val="'+o.fill+'"/></a:solidFill>':'<a:noFill/>';
+  const ln=o.line?'<a:ln w="'+(o.lw||9525)+'"><a:solidFill><a:srgbClr val="'+o.line+'"/></a:solidFill></a:ln>':'<a:ln><a:noFill/></a:ln>';
+  const body=o.paras&&o.paras.length?o.paras.join(''):'<a:p><a:endParaRPr lang="th-TH" sz="1000" dirty="0"/></a:p>';
+  return '<p:sp><p:nvSpPr><p:cNvPr id="'+id+'" name="'+AX(o.name||('Shape '+id))+'"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
+    +'<p:spPr><a:xfrm><a:off x="'+Math.round(x)+'" y="'+Math.round(y)+'"/><a:ext cx="'+Math.max(1,Math.round(w))+'" cy="'+Math.max(1,Math.round(h))+'"/></a:xfrm>'
+    +'<a:prstGeom prst="'+geom+'">'+av+'</a:prstGeom>'+fill+ln+'</p:spPr>'
+    +'<p:txBody><a:bodyPr wrap="square" lIns="'+ins+'" rIns="'+ins+'" tIns="0" bIns="0" anchor="'+(o.anchor||'ctr')+'"><a:noAutofit/></a:bodyPr>'
+    +'<a:lstStyle/>'+body+'</p:txBody></p:sp>';
+}
+function dSlide(title,sh){
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    +'<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+    +'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+    +'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+    +'<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+    +'<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
+    +sh.join('')+pBadge('Dashboard',DC.acc,'FFFFFF')+pTitle(title,fitTitleSize(title,T_TITLE.cx/914400*0.96))
+    +'</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>';
+}
+/* บรรทัดขอบเขตข้อมูลใต้หัวเรื่อง (งาน · ปี · ช่วงวันที่ตรวจ · จำนวนจุด) */
+function dScope(list){
+  const sheets=[...new Set(list.map(r=>String(r.sheet||'').trim()).filter(Boolean))];
+  const yrs=[...new Set(list.map(r=>dbYearTxt(r.year)).filter(Boolean))];
+  const rng=dbDateRange(list);
+  const t=[sheets.length===1?sheets[0]:(sheets.length?sheets.length+' งานตรวจสอบ':''),
+    yrs.length===1?'ปี '+yrs[0]:'', rng?'ตรวจ '+rng:'', list.length+' จุดตรวจ'].filter(Boolean).join('  ·  ');
+  return dSp(DX0,1380000,DXW,320000,{name:'Scope',paras:[dP([[t,1500,0,DC.mut]])]});
+}
+function dPanel(x,y,w,h,head,sub){
+  return [dSp(x,y,w,h,{fill:'FFFFFF',line:DC.line,name:head}),
+    dSp(x+91440,y+50000,w-182880,330000,{paras:[dP([[head,1800,1,DC.acc],[sub?'   '+sub:'',1300,0,DC.mut]])]})];
+}
+/* แถวกราฟแท่งแนวนอน: ป้าย | แท่ง (ซ้อนสีได้) | ค่า */
+function dBarRow(x,y,w,h,label,segs,max,val,lw,vw){
+  const s=[dSp(x,y,lw,h,{ins:0,paras:label})];
+  const tx=x+lw+60000, tw=w-lw-vw-120000, bh=Math.min(h*0.5,210000), by=y+(h-bh)/2;
+  s.push(dSp(tx,by,tw,bh,{fill:DC.track}));
+  let cx=tx;
+  segs.forEach(sg=>{ if(!sg[0]) return; const sw=tw*sg[0]/Math.max(1,max); s.push(dSp(cx,by,sw,bh,{fill:sg[1]})); cx+=sw; });
+  s.push(dSp(tx+tw+60000,y,vw,h,{ins:0,paras:[val]}));
+  return s;
+}
+function dLegend(x,y,lvs){
+  const s=[]; let cx=x;
+  lvs.forEach(n=>{
+    const t=n?n+' '+LEVELS[n-1].short_th:'ไม่ระบุระดับ';
+    s.push(dSp(cx,y+50000,130000,130000,{fill:dLvC(n)}));
+    const w=Math.round(pEmW(t)*12*12700*1.15)+60000;   /* กว้างตามข้อความจริงที่ 12pt */
+    s.push(dSp(cx+170000,y,w,230000,{ins:0,paras:[dP([[t,1200,0,DC.mut]])]}));
+    cx+=170000+w+120000;
+  });
+  return s;
+}
+
+/* ---- สไลด์ 1: ภาพรวม (KPI + ระดับความสำคัญ + แนวทางการแก้ไข) ---- */
+function dsOverview(list){
+  dId=10;
+  const N=list.length, groups=groupRecords(list), lvN=lvCount(list), sh=[dScope(list)];
+  const issues=list.filter(dbIssue).length, urg=lvN[4]+lvN[5], act=lvN[3]+lvN[4]+lvN[5];
+  const bIssue=groups.filter(g=>g.items.some(dbIssue)).length;
+  const bUrg=groups.filter(g=>g.items.some(r=>+r.level>=4)).length, bAct=groups.filter(g=>g.items.some(r=>+r.level>=3)).length;
+  const gl=list.map(dbGaps), ok=gl.filter(g=>!g.length).length, cnt=k=>gl.filter(g=>g.includes(k)).length;
+  const miss=[['รูปถ่าย',cnt('รูปถ่าย')],['ระดับ',cnt('ระดับ')],['แนวทางแก้ไข',cnt('แนวทางแก้ไข')],['วันที่',cnt('วันที่ตรวจ')]].filter(x=>x[1]);
+  const avg=groups.length?(N/groups.length).toFixed(1).replace(/\.0$/,''):0;
+  const kp=[
+    {h:'อาคาร / โครงสร้าง',v:groups.length,u:'อาคาร',s:N+' จุดตรวจ · เฉลี่ย '+avg+' จุด/อาคาร',c:DC.acc},
+    {h:'จุดที่พบปัญหา',v:issues,u:'จุด · '+dbPctTxt(issues,N),s:'ใน '+bIssue+' จาก '+groups.length+' อาคาร',c:DC.warn,p:issues/N},
+    {h:'เร่งด่วน (ระดับ 4–5)',v:urg,u:'จุด',s:urg?('ใน '+bUrg+' อาคาร · ระดับ 5 '+lvN[5]+' จุด'):'ไม่มีจุดที่ต้องเสริมกำลังหรือก่อสร้างใหม่',
+      c:urg?DC.crit:DC.ok,p:urg/N},
+    {h:'ความครบถ้วนของข้อมูล',v:dbPct(ok,N)+'%',u:'ครบ ('+ok+'/'+N+')',
+      s:miss.length?'ขาด '+miss.map(x=>x[0]+' '+x[1]).join(' · '):'ข้อมูลครบทุกรายการ',c:ok===N?DC.ok:DC.warn,p:ok/N}];
+  const gap=182880, ky=1750000, kh=1200000, cw=(DXW-3*gap)/4;
+  kp.forEach((k,i)=>{
+    const x=DX0+i*(cw+gap), iw=cw-228600;
+    sh.push(dSp(x,ky,cw,kh,{fill:'FFFFFF',line:DC.line,name:k.h}));
+    sh.push(dSp(x,ky,64008,kh,{fill:k.c}));
+    sh.push(dSp(x+137160,ky+60000,iw,300000,{ins:0,paras:[dP([[k.h,1600,1,DC.acc]])]}));
+    sh.push(dSp(x+137160,ky+340000,iw,480000,{ins:0,anchor:'b',paras:[dP([[k.v,3600,1,k.c],[' '+k.u,1500,0,DC.mut]])]}));
+    sh.push(dSp(x+137160,ky+830000,iw,240000,{ins:0,paras:[dP([[k.s,1300,0,DC.mut]])]}));
+    if(k.p!=null){
+      sh.push(dSp(x+137160,ky+kh-120000,iw,50000,{fill:DC.track}));
+      if(k.p>0) sh.push(dSp(x+137160,ky+kh-120000,Math.max(30000,iw*k.p),50000,{fill:k.c}));
+    }
+  });
+  /* ซ้าย: ต้องดำเนินการ + สัดส่วนระดับ */
+  const py=ky+kh+150000, ph=DYB-py, lw=Math.round(DXW*0.53), rw=DXW-lw-gap, rx=DX0+lw+gap;
+  sh.push(...dPanel(DX0,py,lw,ph,'ต้องดำเนินการ (ระดับ 3–5)'));
+  const bx=DX0+137160, bw=lw-274320;
+  sh.push(dSp(bx,py+370000,bw,450000,{ins:0,anchor:'b',paras:[dP([[act,3600,1,urg?DC.crit:DC.ink],
+    ['  จุด จาก '+N+' จุดตรวจ ('+dbPctTxt(act,N)+')',1600,0,DC.mut]])]}));
+  sh.push(dSp(bx,py+830000,bw,260000,{ins:0,paras:[dP([[act?('อยู่ใน '+bAct+' อาคาร · '+(urg?('เร่งด่วน (ระดับ 4–5) '+urg+' จุด ใน '+bUrg+' อาคาร'):'ไม่มีจุดเร่งด่วนระดับ 4–5'))
+    :'ไม่พบจุดที่ต้องซ่อมแซม เสริมกำลัง หรือก่อสร้างใหม่',1300,0,DC.mut]])]}));
+  let cx=bx; const by=py+1130000;
+  [1,2,3,4,5,0].filter(n=>lvN[n]).forEach(n=>{
+    const w=bw*lvN[n]/N;
+    sh.push(dSp(cx,by,w,300000,{fill:dLvC(n),ins:0,name:'Level '+n,paras:[dP([[lvN[n]/N>=0.06?lvN[n]:'',1300,1,dLvInk(n)]],'ctr')]}));
+    cx+=w;
+  });
+  sh.push(dSp(bx,by+310000,bw/2,200000,{ins:0,paras:[dP([['ปกติ',1100,0,DC.mut]])]}));
+  sh.push(dSp(bx+bw/2,by+310000,bw/2,200000,{ins:0,paras:[dP([['รุนแรง',1100,0,DC.mut]],'r')]}));
+  const lvs=[1,2,3,4,5].concat(lvN[0]?[0]:[]), ry0=by+560000;
+  const rh=Math.min(300000,(py+ph-60000-ry0)/lvs.length), bs=Math.round(rh*0.78);
+  lvs.forEach((n,i)=>{
+    const y=ry0+i*rh;
+    sh.push(dSp(bx,y+(rh-bs)/2,bs,bs,{fill:dLvC(n),ins:0,paras:[dP([[n||'–',1200,1,dLvInk(n)]],'ctr')]}));
+    sh.push(...dBarRow(bx+bs+80000,y,bw-bs-80000,rh,[dP([[n?LEVELS[n-1].short_th:'ยังไม่ระบุระดับ',1400,0,DC.ink]])],
+      [[lvN[n],dLvC(n)]],N,dP([[lvN[n],1400,1,DC.ink],['  '+dbPctTxt(lvN[n],N),1200,0,DC.mut]],'r'),1400000,850000));
+  });
+  /* ขวา: แนวทางการแก้ไข */
+  const rc=new Map(); let noSol=0;
+  list.forEach(r=>{ const ks=repairOf(r); if(!ks.length) noSol++; ks.forEach(k=>rc.set(k,(rc.get(k)||0)+1)); });
+  const rr=[...rc.entries()].map(([k,n])=>({k:k,n:n,t:k==='other'?'อื่น ๆ':(REPAIR.find(g=>g.k===k)||{}).t||k}))
+    .sort((a,b)=>(a.k==='other')-(b.k==='other')||b.n-a.n).slice(0,9);
+  sh.push(...dPanel(rx,py,rw,ph,'แนวทางการแก้ไข','ตามที่ระบุในรายงาน'));
+  if(rr.length){
+    const rmx=Math.max(1,...rr.map(x=>x.n)), y0=py+430000, rh2=Math.min(330000,(ph-430000-330000)/rr.length);
+    rr.forEach((x,i)=>sh.push(...dBarRow(rx+137160,y0+i*rh2,rw-274320,rh2,[dP([[x.t,1300,0,DC.ink]])],
+      [[x.n,DC.acc]],rmx,dP([[x.n,1400,1,DC.ink],[' จุด',1200,0,DC.mut]],'r'),2150000,600000)));
+  }else sh.push(dSp(rx,py+430000,rw,ph-760000,{paras:[dP([['ยังไม่มีการระบุแนวทางการแก้ไข',1500,0,DC.mut]],'ctr')]}));
+  sh.push(dSp(rx+137160,py+ph-300000,rw-274320,260000,{ins:0,paras:[dP([['จัดกลุ่มอัตโนมัติจากคำในช่อง “แนวทางการแก้ไข” (โดยประมาณ) · 1 จุดอาจมีหลายวิธี'
+    +(noSol?' · ยังไม่ระบุ '+noSol+' จุด':''),1100,0,DC.mut]])]}));
+  return dSlide('สรุปผลการตรวจสอบ (Dashboard)',sh);
+}
+
+/* ---- สไลด์ 2: ประเภทปัญหาที่พบ (ตามประเภท / ตามหมวดงาน) แยกสีตามระดับ ---- */
+function dsDamage(list){
+  dId=10;
+  const N=list.length, sh=[dScope(list)];
+  const dc=new Map(), gc=new Map(), dl=new Map(), gl=new Map();
+  const add=(m,k,lv)=>{ if(!m.has(k)) m.set(k,[0,0,0,0,0,0]); m.get(k)[lv]++; };
+  list.forEach(r=>{ const lv=+r.level||0; const ids=damageOrAuto(r).filter(id=>id!=='ot_none'); const gs=new Set();
+    ids.forEach(id=>{ dc.set(id,(dc.get(id)||0)+1); add(dl,id,lv); const it=DMAP[id]; if(it) gs.add(it.g); });
+    gs.forEach(g=>{ gc.set(g,(gc.get(g)||0)+1); add(gl,g,lv); }); });
+  const byN=(a,b)=>b.n-a.n||String(a.t).localeCompare(String(b.t),'th');
+  const types=[...dc.entries()].map(([id,n])=>({t:dmName(id),n:n,lv:dl.get(id),sub:(DMAP[id]&&DMAP[id].gth)||''})).sort(byN);
+  const grps=DAMAGE.filter(g=>gc.has(g.g)).map(g=>({t:g.gth,n:gc.get(g.g),lv:gl.get(g.g)})).sort(byN);
+  const py=1750000, ph=6280000-py, gap=182880, lw=Math.round(DXW*0.6), rw=DXW-lw-gap, rx=DX0+lw+gap;
+  const segs=x=>[1,2,3,4,5,0].map(n=>[x.lv[n],dLvC(n)]);
+  const val=x=>dP([[x.n,1400,1,DC.ink],[' จุด · '+dbPctTxt(x.n,N),1100,0,DC.mut]],'r');
+  const LIM=12, shown=types.slice(0,LIM);
+  sh.push(...dPanel(DX0,py,lw,ph,'ตามประเภท',types.length+' ประเภท'+(types.length>LIM?' · แสดง '+LIM+' อันดับแรก':'')));
+  sh.push(...dPanel(rx,py,rw,ph,'ตามหมวดงาน',grps.length+' หมวด'));
+  if(shown.length){
+    const mx=Math.max(1,...types.map(x=>x.n)), y0=py+430000, rh=Math.min(360000,(ph-480000)/shown.length);
+    shown.forEach((x,i)=>sh.push(...dBarRow(DX0+137160,y0+i*rh,lw-274320,rh,
+      [dP([[x.t,1300,0,DC.ink]]),dP([[x.sub,1000,0,DC.mut]])],segs(x),mx,val(x),2700000,1050000)));
+    const gmx=Math.max(1,...grps.map(x=>x.n)), rh2=Math.min(400000,(ph-480000)/grps.length);
+    grps.forEach((x,i)=>sh.push(...dBarRow(rx+137160,y0+i*rh2,rw-274320,rh2,
+      [dP([[x.t,1300,0,DC.ink]])],segs(x),gmx,val(x),1750000,1050000)));
+  }else{
+    sh.push(dSp(DX0,py+430000,lw,ph-600000,{paras:[dP([['ไม่พบความเสียหายในรายการที่ส่งออก',1600,0,DC.mut]],'ctr')]}));
+  }
+  sh.push(...dLegend(DX0,6330000,[1,2,3,4,5,0]));
+  sh.push(dSp(DX0+7300000,6330000,DXW-7300000,230000,{ins:0,paras:[dP([['1 จุดตรวจพบได้หลายประเภท · จุดที่ไม่ได้เลือกประเภทไว้ ระบบเดาจากข้อความผลการตรวจสอบ',1000,0,DC.mut]],'r')]}));
+  return dSlide('ประเภทปัญหาที่พบ',sh);
+}
+
+/* ---- ตารางของ PowerPoint (ใช้กับ อาคาร × ระดับ) ---- */
+function dTbl(x,y,cols,rows){
+  const ln=t=>'<a:'+t+' w="6350"><a:solidFill><a:srgbClr val="'+DC.line+'"/></a:solidFill></a:'+t+'>';
+  const tc=c=>'<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:pPr algn="'+(c.algn||'ctr')+'"/>'
+    +pRun(c.t==null?'':String(c.t),c.sz||1400,c.b?1:0,c.ink||DC.ink)+'</a:p></a:txBody>'
+    +'<a:tcPr marL="54864" marR="54864" marT="9144" marB="9144" anchor="ctr">'+ln('lnL')+ln('lnR')+ln('lnT')+ln('lnB')
+    +(c.fill?'<a:solidFill><a:srgbClr val="'+c.fill+'"/></a:solidFill>':'<a:noFill/>')+'</a:tcPr></a:tc>';
+  const W=cols.reduce((a,b)=>a+b,0), H=rows.reduce((a,r)=>a+r.h,0);
+  return '<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="'+(++dId)+'" name="Building x Severity"/>'
+    +'<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>'
+    +'<p:xfrm><a:off x="'+x+'" y="'+y+'"/><a:ext cx="'+W+'" cy="'+H+'"/></p:xfrm>'
+    +'<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr firstRow="1"/>'
+    +'<a:tblGrid>'+cols.map(w=>'<a:gridCol w="'+w+'"/>').join('')+'</a:tblGrid>'
+    +rows.map(r=>'<a:tr h="'+r.h+'">'+r.cells.map(tc).join('')+'</a:tr>').join('')
+    +'</a:tbl></a:graphicData></a:graphic></p:graphicFrame>';
+}
+/* ---- สไลด์ 3+: อาคาร × ระดับความสำคัญ (heatmap) — 12 อาคารต่อสไลด์ ---- */
+function dsHeat(list){
+  const rows=groupRecords(list).map(g=>{ const c=lvCount(g.items);
+    return {g,c,top:Math.max(0,...g.items.map(r=>+r.level||0)),n:g.items.length}; });
+  const mx=Math.max(1,...rows.map(x=>Math.max(...x.c.slice(1))));
+  const lvs=[1,2,3,4,5].concat(rows.some(x=>x.c[0])?[0]:[]);
+  const wN=3000000, wC=600000, wL=700000, wM=1350000, wT=DXW-wN-wC-wL*lvs.length-wM;
+  const cols=[wN,wC].concat(lvs.map(()=>wL),[wM,wT]);
+  const H={fill:DC.acc,ink:'FFFFFF',b:1};
+  const head={h:400000,cells:[Object.assign({t:'อาคาร / โครงสร้าง',algn:'l'},H),Object.assign({t:'จุด'},H)]
+    .concat(lvs.map(n=>({t:n?n+' '+LEVELS[n-1].short_th:'ไม่ระบุ',fill:dLvC(n),ink:dLvInk(n),b:1,sz:1200})),
+      [Object.assign({t:'สูงสุด'},H),Object.assign({t:'ปัญหาที่พบบ่อย',algn:'l'},H)])};
+  const body=rows.map(x=>{ const g=x.g, L=LEVELS[x.top-1];
+    const m=new Map(); g.items.forEach(r=>damageOrAuto(r).filter(id=>id!=='ot_none').forEach(id=>m.set(id,(m.get(id)||0)+1)));
+    const tops=[...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,2).map(([id])=>dmName(id)).join(' · ');
+    return {h:300000,cells:[{t:(g.no?g.no+'. ':'')+(g.name||'ไม่ระบุอาคาร'),algn:'l',sz:1300},{t:x.n,b:1}]
+      .concat(lvs.map(n=>{ const v=x.c[n]; if(!v) return {t:'·',ink:DC.un};
+        const k=n?0.18+0.72*Math.min(1,v/mx):0.5;
+        return {t:v,b:1,fill:dMix(dLvC(n),k),ink:(n>=3&&k>=0.55)?'FFFFFF':DC.ink}; }),
+      [x.top?{t:x.top+' '+L.short_th,fill:dLvC(x.top),ink:dLvInk(x.top),b:1,sz:1200}:{t:'ไม่ระบุ',fill:DC.soft,ink:DC.mut,sz:1200},
+       {t:tops||'ไม่พบความเสียหาย',algn:'l',sz:1200,ink:tops?DC.ink:DC.mut}])};
+  });
+  const S={fill:DC.soft,b:1};
+  const total={h:300000,cells:[Object.assign({t:'รวม',algn:'l'},S),Object.assign({t:rows.reduce((a,x)=>a+x.n,0)},S)]
+    .concat(lvs.map(n=>Object.assign({t:rows.reduce((a,x)=>a+x.c[n],0)},S)),[{fill:DC.soft},{fill:DC.soft}])};
+  const PER=12, pages=Math.max(1,Math.ceil(body.length/PER)), out=[];
+  for(let p=0;p<pages;p++){
+    dId=10;
+    const chunk=body.slice(p*PER,(p+1)*PER).concat(p===pages-1?[total]:[]);
+    const sh=[dScope(list),dTbl(DX0,1750000,cols,[head].concat(chunk))];
+    sh.push(dSp(DX0,6420000,DXW,230000,{ins:0,paras:[dP([[rows.length+' อาคาร · ความเข้มของช่อง = จำนวนจุดเทียบกับช่องที่มากที่สุด',1100,0,DC.mut]])]}));
+    out.push(dSlide('อาคาร × ระดับความสำคัญ'+(pages>1?' ('+(p+1)+'/'+pages+')':''),sh));
+  }
+  return out;
+}
+
+/* ---- สไลด์สุดท้าย: ความคืบหน้าการตรวจ (กราฟแท่งซ้อนรายวัน / รายสัปดาห์) ---- */
+function dsTimeline(list){
+  const src=list.filter(r=>r.date&&parseISO(r.date));
+  if(!src.length) return null;
+  dId=10;
+  const sh=[dScope(list)];
+  const ds=src.map(r=>r.date).sort(), a=parseISO(ds[0]), b=parseISO(ds[ds.length-1]);
+  const days=Math.round((b-a)/864e5)+1, wk=days>70;
+  const by=new Map(); src.forEach(r=>{ if(!by.has(r.date)) by.set(r.date,[0,0,0,0,0,0]); by.get(r.date)[+r.level||0]++; });
+  const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const bins=[];
+  for(let d=new Date(a);d<=b;d.setDate(d.getDate()+(wk?7:1))){
+    const c=[0,0,0,0,0,0];
+    for(let k=0;k<(wk?7:1);k++){ const x=new Date(d); x.setDate(x.getDate()+k); const v=by.get(iso(x)); if(v) v.forEach((n,i)=>c[i]+=n); }
+    bins.push({d:iso(d),c,n:c.reduce((p,q)=>p+q,0)});
+  }
+  const active=by.size;
+  const st=[[src.length,'จุดตรวจที่มีวันที่'],[active,'วันที่ออกตรวจ'],
+    [(src.length/active).toFixed(1).replace(/\.0$/,''),'จุด / วัน (เฉลี่ย)'],[days,'วัน · '+dbDateRange(src)]];
+  const gap=182880, ky=1750000, kh=780000, cw=(DXW-3*gap)/4;
+  st.forEach((s,i)=>{ const x=DX0+i*(cw+gap);
+    sh.push(dSp(x,ky,cw,kh,{fill:'FFFFFF',line:DC.line}));
+    sh.push(dSp(x+137160,ky+40000,cw-228600,440000,{ins:0,anchor:'b',paras:[dP([[s[0],3200,1,DC.acc]])]}));
+    sh.push(dSp(x+137160,ky+480000,cw-228600,260000,{ins:0,paras:[dP([[s[1],1300,0,DC.mut]])]}));
+  });
+  const py=ky+kh+150000, ph=6280000-py;
+  sh.push(...dPanel(DX0,py,DXW,ph,'จำนวนจุดตรวจ'+(wk?'รายสัปดาห์':'รายวัน'),'แยกสีตามระดับความสำคัญ'));
+  const px=DX0+600000, pw=DXW-750000, ptop=py+560000, pbot=py+ph-380000, phh=pbot-ptop;
+  const mx=Math.max(1,...bins.map(x=>x.n)), step=mx<=4?1:Math.ceil(mx/4), top=Math.ceil(mx/step)*step, sc=top*1.12;
+  for(let v=0;v<=top;v+=step){
+    const y=pbot-v/sc*phh;
+    sh.push(dSp(px,y,pw,6350,{fill:v?DC.line:DC.mut}));
+    sh.push(dSp(DX0+60000,y-100000,480000,200000,{ins:0,paras:[dP([[v,1100,0,DC.mut]],'r')]}));
+  }
+  const slot=pw/bins.length, bw=Math.min(900000,Math.max(12000,slot*0.68)), lab=bins.length<=45;
+  bins.forEach((x,i)=>{
+    if(!x.n) return;
+    const bx=px+i*slot+(slot-bw)/2; let cy=pbot;
+    [1,2,3,4,5,0].forEach(n=>{ if(!x.c[n]) return; const hh=x.c[n]/sc*phh; sh.push(dSp(bx,cy-hh,bw,hh,{fill:dLvC(n)})); cy-=hh; });
+    if(lab) sh.push(dSp(bx-slot*0.3,cy-200000,bw+slot*0.6,190000,{ins:0,paras:[dP([[x.n,1000,1,DC.ink]],'ctr')]}));
+  });
+  const k=Math.max(1,Math.ceil(bins.length/12)), xw=Math.min(slot*k,1400000);
+  bins.forEach((x,i)=>{ if(i%k) return;
+    sh.push(dSp(px+i*slot+slot/2-xw/2,pbot+40000,xw,220000,{ins:0,paras:[dP([[dbShortDate(x.d),1100,0,DC.mut]],'ctr')]})); });
+  sh.push(...dLegend(DX0,6330000,[1,2,3,4,5].concat(src.some(r=>!+r.level)?[0]:[])));
+  return dSlide('ความคืบหน้าการตรวจ',sh);
+}
+/* ชุดสไลด์ Dashboard ทั้งหมด (คืนค่า [] ถ้าไม่มีรายการ) */
+function dashSlides(recs){
+  const list=sortedRecords((recs||[]).filter(Boolean));
+  if(!list.length) return [];
+  const out=[dsOverview(list),dsDamage(list)].concat(dsHeat(list));
+  const tl=dsTimeline(list); if(tl) out.push(tl);
+  return out;
 }
 
 
@@ -6970,7 +7268,10 @@ async function buildPptx(recs){
   const full=await withFlatPhotos(recs);
   const payload=full.map(r=>Object.assign({},r,{
     photos:(r.photos||[]).filter(Boolean).map(p=>({bytes:dataUrlToBytes(p.dataUrl),w:p.w,h:p.h,ox:p.ox,oy:p.oy}))}));
-  return renderPptx(PPTX_TPL,payload,'th');
+  /* V12.4 — ต่อท้ายด้วยสไลด์ Dashboard ของชุดรายการเดียวกัน (สร้างไม่สำเร็จก็ยังได้สไลด์รายการครบ) */
+  let dash=[];
+  try{ dash=dashSlides(recs); }catch(e){ console.warn('dashboard slides',e); }
+  return renderPptx(PPTX_TPL,payload,'th',dash);
 }
 
 /* ---- ตารางสรุปผลการตรวจสอบ: จัดกลุ่มตามลำดับอาคาร แล้วแบ่งหน้า ----
@@ -7119,7 +7420,7 @@ async function exportPptx(all){
   const recs=pickRecs(all);
   if(!recs.length){ toast('ยังไม่ได้เลือกรายการ — ไปที่ Inspection List เพื่อติ๊กเลือก'); return; }
   if(!PPTX_TPL){ toast('อ่านไฟล์ต้นแบบสไลด์ไม่สำเร็จ'); return; }
-  toast('กำลังสร้างสไลด์ '+recs.length+' หน้า…',9000);
+  toast('กำลังสร้างสไลด์ '+recs.length+' หน้า + Dashboard…',9000);
   try{ const bytes=await buildPptx(recs);
     await deliver('Inspection-Slides-'+stamp()+'.pptx',bytes,
       'application/vnd.openxmlformats-officedocument.presentationml.presentation');
@@ -7183,7 +7484,7 @@ const PV_NOTE={
   sum:'ตารางสรุปผลการตรวจสอบ A4 แนวนอน — 1 ลำดับอาคารต่อ 1 หน้า ใส่เฉพาะรายการในลำดับนั้น ถ้ารายการล้นหน้าจะขึ้นหน้าใหม่ด้วยหัวข้อเดิม (ไม่มีรูปในตารางสรุป)',
   docx:'หน้ากระดาษนี้สร้างจากโครงตารางเดียวกับไฟล์ Template docx — ตำแหน่งช่อง ความกว้างคอลัมน์ และความสูงแถว ตรงกับไฟล์ที่จะได้ทุกช่อง',
   pdf:'PDF สร้างจากหน้ากระดาษชุดเดียวกับพรีวิวนี้ — สั่งพิมพ์แล้วเลือก “Save as PDF” จะได้ผลตรงกับที่เห็น (ตั้งขนาด A4 และขอบกระดาษเป็น None)',
-  pptx:'สไลด์ 16:9 วางตำแหน่งตามไฟล์ Template.pptx จริง — หัวเรื่อง แถบระดับความสำคัญ กล่องข้อมูล และแถวรูป',
+  pptx:'สไลด์ 16:9 วางตำแหน่งตามไฟล์ Template.pptx จริง — หัวเรื่อง แถบระดับความสำคัญ กล่องข้อมูล และแถวรูป · ท้ายไฟล์มีสไลด์สรุปแบบ Dashboard (กราฟ / ตาราง) ต่อให้อัตโนมัติ',
   xlsx:'ตารางฐานข้อมูลนี้คือชีต Inspection DB ที่จะได้ในไฟล์ .xlsx — ส่งออกทุกรายการในเครื่องเสมอ'
 };
 function pvRecords(){
