@@ -1865,6 +1865,7 @@ body.mobile-form .bsug.anntext .rb button{min-height:46px}
 .expf>[data-ico]{flex:none}
 .expf .et{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
 .expf .et b{font-size:14.5px;font-weight:600;color:var(--ink)}
+.expf .et .es{font-size:12px;color:var(--muted);line-height:1.35;margin-top:1px}
 .expf .en{flex:none;font:600 12px var(--mono);color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line-soft);border-radius:99px;padding:2px 10px;white-space:nowrap}
 .btn.expf:disabled{opacity:.5}
 @media (max-width:767px){
@@ -3011,10 +3012,12 @@ button.kpi:hover .kgo,button.kpi:focus-visible .kgo{opacity:1}
         <button class="btn expf" id="expDocx" type="button"><span data-ico="fileDoc"></span><span class="et"><b>Word (.docx)</b></span><span class="en"></span></button>
         <button class="btn expf" id="expSum" type="button"><span data-ico="fileDoc"></span><span class="et"><b>ตารางสรุป (.docx)</b></span><span class="en"></span></button>
         <button class="btn expf" id="expPptx" type="button"><span data-ico="fileSlide"></span><span class="et"><b>PowerPoint (.pptx)</b></span><span class="en"></span></button>
+        <button class="btn expf" id="expPres" type="button"><span data-ico="expand"></span><span class="et"><b>นำเสนอ (.html)</b><small class="es">เต็มจอ · Presenter view · โน้ต</small></span><span class="en"></span></button>
         <button class="btn expf" id="expPdf" type="button"><span data-ico="printer"></span><span class="et"><b>PDF</b></span><span class="en"></span></button>
         <button class="btn expf" id="expXlsx" type="button"><span data-ico="fileSheet"></span><span class="et"><b>Excel Database (.xlsx)</b></span><span class="en"></span></button>
       </div>
       <p class="sub" id="expSize" style="margin:14px 0 0;font-size:13px"></p>
+      <p class="sub" style="margin:6px 0 0;font-size:13px">มีไฟล์นำเสนอที่ใส่โน้ตไว้แล้ว? <button type="button" class="linkbtn" id="expNotesImp">นำเข้าโน้ตผู้นำเสนอจากไฟล์ .html</button> — ส่งออกครั้งถัดไปโน้ตจะติดไปด้วย<input type="file" id="expNotesFile" accept=".html,.htm,text/html" hidden></p>
     </div>
   </div>
 
@@ -7436,6 +7439,565 @@ async function exportXlsx(){
       ?'มุมมองนี้ยังบันทึก .xlsx ไม่ได้ — ดาวน์โหลดไฟล์แอปไปเปิดในเครื่องแล้วสั่งอีกครั้ง'
       :'ส่งออกไม่สำเร็จ: '+(e.message||e)); } }
 
+/* =============== V12.5: ไฟล์นำเสนอ (.html) — เปิดเต็มจอ · Presenter view · โน้ตผู้นำเสนอ ===============
+   ไฟล์ .html ไฟล์เดียว เปิดด้วยเบราว์เซอร์ได้โดยไม่ต้องต่อเน็ต
+   · สไลด์รายการ = หน้าตาเดียวกับ .pptx (ใช้ slideHtml ชุดเดียวกับพรีวิว)
+   · สไลด์ Dashboard 4 หน้า กรองได้จริงเหมือนในแอป (ใช้ฟังก์ชัน db* ชุดเดียวกับหน้า Dashboard — คัดลอกจากโค้ดที่รันอยู่ตอนส่งออก)
+   · โน้ตผู้นำเสนอ: แก้ได้ในไฟล์ (แถบโน้ต / Presenter view) แล้วกด "บันทึก" เขียนกลับลงไฟล์ .html
+   · โน้ตที่ใส่ไว้จะติดไปกับการส่งออกครั้งถัดไปด้วย ถ้านำเข้าไฟล์ที่บันทึกแล้วกลับเข้าแอป */
+const PRES_NOTES_KEY='ci_pnotes';
+function presNotesGet(){ try{ return JSON.parse(localStorage.getItem(PRES_NOTES_KEY)||'{}')||{}; }catch(e){ return {}; } }
+function presNotesSet(o){ try{ localStorage.setItem(PRES_NOTES_KEY,JSON.stringify(o)); }catch(e){} }
+const PRES_DASH=[
+  {id:'d:sum', t:'สรุปผลการตรวจสอบ (Dashboard)'},
+  {id:'d:dmg', t:'ประเภทปัญหาที่พบ และแนวทางการแก้ไข'},
+  {id:'d:heat',t:'อาคาร × ระดับความสำคัญ'},
+  {id:'d:prio',t:'จุดที่ต้องดำเนินการก่อน และความคืบหน้าการตรวจ'}];
+/* ฟังก์ชัน / ค่าคงที่ที่ Dashboard ในไฟล์นำเสนอต้องใช้ (อ้างถึงตัวที่รันอยู่จริง จึงตรงกับแอปเวอร์ชันนี้เสมอ) */
+function presDeps(){ return {dbFilters,dbHero,dbKpis,dbHeat,dbDamage,dbRepair,dbPrio,dbTimeline,dbScope,dbBase,lvName,lvBadge,ticks,
+  sortedRecords,dbDateRange,dbHasFilter,dbSetLv,dbToggleLv,DBS,groupRecords,hesc,dbYearTxt,LEVELS,ico,dmName,DAMAGE,REPAIR,
+  shortDate,parseISO,lvCount,dbPctTxt,dbIssue,dbGaps,dbPct,damageOrAuto,DMAP,repairOf,buildingFull,dbShortDate,dbNoSol,dbDmIds,
+  groupKey,gnum,fmtRange,ICONS,ICONS_FILLED,MONTH_TH,damageOf,guessDamage,MONTH_TH_S,hasKw,negatedAt,NEG}; }
+function presSer(v){
+  if(v===null||v===undefined) return String(v);
+  const t=typeof v;
+  if(t==='number'||t==='boolean') return String(v);
+  if(t==='string') return JSON.stringify(v);
+  if(v instanceof RegExp) return v.toString();
+  if(v instanceof Set) return 'new Set('+presSer([...v])+')';
+  if(v instanceof Map) return 'new Map('+presSer([...v])+')';
+  if(Array.isArray(v)) return '['+v.map(presSer).join(',')+']';
+  if(t==='function') return '('+v.toString()+')';
+  return '{'+Object.keys(v).map(k=>JSON.stringify(k)+':'+presSer(v[k])).join(',')+'}';
+}
+function presDepsSrc(){
+  let s='"use strict";\nlet records=[];\n';
+  for(const [k,v] of Object.entries(presDeps())){
+    if(typeof v==='function'){ const src=v.toString();
+      s+=(/^(async\s+)?function[\s*]/.test(src)?src:('const '+k+'='+src+';'))+'\n'; }
+    else s+='const '+k+'='+presSer(v)+';\n';
+  }
+  return s;
+}
+const presJson=o=>JSON.stringify(o).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
+async function buildPresHtml(recs){
+  const full=await withFlatPhotos(recs);
+  const slides=full.map((r,i)=>({id:'r:'+r.id,k:'rec',rid:r.id,t:buildingFull(r)||'-',
+    s:String(r.loc||'').trim(),lv:+r.level||0,h:slideHtml(r,i)}));
+  PRES_DASH.forEach(d=>slides.push({id:d.id,k:'dash',t:d.t}));
+  const lite=recs.map(r=>{ const o={};
+    Object.keys(r).forEach(k=>{ const v=r[k]; if(k==='photos'||k==='thumb') return; if(typeof v==='string'&&v.startsWith('data:')) return; o[k]=v; });
+    return o; });
+  const sheets=[...new Set(recs.map(r=>String(r.sheet||'').trim()).filter(Boolean))];
+  const title=sheets.length===1?sheets[0]:'ผลการตรวจสอบสภาพโครงสร้าง';
+  const all=presNotesGet(), notes={};
+  slides.forEach(s=>{ if(all[s.id]) notes[s.id]=all[s.id]; });
+  const data={v:1,id:'d'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),title,
+    created:new Date().toISOString(),slides,records:lite,db:{view:DBS.view,sort:DBS.sort}};
+  const css=[...document.querySelectorAll('style')].map(s=>s.textContent).join('\n');
+  const js=(presDepsSrc()+'\n('+presRuntime.toString()+')();')
+    .replace(/<\/script/gi,'<\\/script').replace(/<!-{2}/g,'<\\!--');
+  return '<!doctype html>\n<html lang="th" data-theme="light"><head><meta charset="utf-8">'
+    +'<meta name="viewport" content="width=device-width,initial-scale=1">'
+    +'<title>'+hesc(title)+' — นำเสนอ</title>'
+    +'<style>'+css+'</style><style>'+PRES_CSS+'</style></head>'
+    +'<body class="deck"><div id="deck"></div>'
+    +'<script type="application/json" id="deckData">'+presJson(data)+'<\/script>\n'
+    +'<script type="application/json" id="deckNotes">'+presJson({saved:Date.now(),notes})+'<\/script>\n'
+    +'<script>'+js+'<\/script></body></html>';
+}
+async function exportPres(all){
+  const recs=pickRecs(all);
+  if(!recs.length){ toast('ยังไม่ได้เลือกรายการ — ไปที่ Inspection List เพื่อติ๊กเลือก'); return; }
+  toast('กำลังสร้างไฟล์นำเสนอ '+recs.length+' สไลด์ + Dashboard…',9000);
+  try{ const html=await buildPresHtml(recs);
+    await deliver('Inspection-Present-'+stamp()+'.html',new TextEncoder().encode(html),'text/html');
+  }catch(e){ toast((e.code==='rejected_extension'||e.code==='extension_not_enabled')
+      ?'มุมมองนี้ยังบันทึก .html ไม่ได้ — ดาวน์โหลดไฟล์แอปไปเปิดในเครื่องแล้วสั่งอีกครั้ง'
+      :'สร้างไฟล์นำเสนอไม่สำเร็จ: '+(e.message||e)); }
+}
+/* นำโน้ตจากไฟล์นำเสนอที่บันทึกไว้กลับเข้าแอป — ส่งออกครั้งถัดไปโน้ตจะติดไปด้วย */
+async function importPresNotes(file){
+  try{
+    const txt=await file.text();
+    const m=txt.match(/<script type="application\/json" id="deckNotes">([\s\S]*?)<\/script>/);
+    if(!m){ toast('ไม่พบโน้ตในไฟล์นี้ — ต้องเป็นไฟล์นำเสนอ (.html) ที่ส่งออกจากแอปนี้'); return; }
+    const o=JSON.parse(m[1]), n=(o&&o.notes)||{};
+    const cur=presNotesGet(); let c=0;
+    Object.keys(n).forEach(k=>{ const v=String(n[k]||''); if(v.trim()){ cur[k]=v; c++; } });
+    presNotesSet(cur);
+    toast(c?('นำเข้าโน้ตผู้นำเสนอ '+c+' สไลด์แล้ว — ส่งออกไฟล์นำเสนอครั้งถัดไปจะมีโน้ตนี้'):'ไฟล์นี้ยังไม่มีโน้ต',4500);
+  }catch(e){ toast('อ่านไฟล์ไม่สำเร็จ: '+(e.message||e)); }
+}
+
+const PRES_CSS=`
+html,body.deck{height:100%}
+body.deck{margin:0!important;padding:0!important;background:#0e1011!important;overflow:hidden;min-width:0!important}
+.pstage{position:fixed;left:0;right:0;top:0;bottom:0;overflow:hidden;background:#0e1011;touch-action:pan-y}
+body.deck.notes-on .pstage{bottom:var(--pnh,30vh)}
+.pfit{position:absolute;left:50%;top:50%;transform-origin:center center}
+.pfit .slide{margin:0!important;box-shadow:none!important}
+.pfit.prec{cursor:pointer}
+.dslide{width:1280px;height:720px;box-sizing:border-box;background:var(--ground);color:var(--ink);padding:20px 26px 18px;
+  display:flex;flex-direction:column;overflow:hidden;font-size:15px;line-height:1.6}
+.dsh{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 16px;margin:0 0 10px}
+.dsh h1{margin:0;font-size:27px;font-weight:700;letter-spacing:-.015em;line-height:1.25;color:var(--ink)}
+.dsh .dbsub{order:0;flex:1 1 auto;font-size:15px}
+.dslide .dbbar{margin:0 0 12px;flex:none}
+.dsbody{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;border-radius:16px}
+.dslide .dbgrid{align-items:start}
+.dslide .dbc.w7{grid-column:span 7}.dslide .dbc.w5{grid-column:span 5}
+.dslide .dbkpis{grid-column:span 7}
+.dslide .hm td.tp,.dslide .hm th.tp{display:table-cell}
+.dslide .dbempty{min-height:60vh}
+.phud{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;gap:2px;padding:5px;
+  background:rgba(18,20,22,.88);color:#fff;border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.35);z-index:20;
+  transition:opacity .25s;font-size:14px;max-width:calc(100vw - 20px);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+body.deck.notes-on .phud{bottom:calc(var(--pnh,30vh) + 12px)}
+.phud.idle{opacity:0;pointer-events:none}
+.phud button{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 10px;
+  border-radius:9px;color:#fff;white-space:nowrap;position:relative}
+.phud button:hover{background:rgba(255,255,255,.13)}
+.phud button:focus-visible{outline:2px solid #8fc1ff}
+.phud button[aria-pressed="true"]{background:rgba(255,255,255,.2)}
+.phud .ico{width:18px;height:18px}
+.phud .ppos{font-variant-numeric:tabular-nums;padding:0 8px;min-width:70px;text-align:center;font-weight:600}
+.phud .psep{width:1px;height:22px;background:rgba(255,255,255,.2);margin:0 4px;flex:none}
+.phud .pdot{position:absolute;top:6px;right:5px;width:8px;height:8px;border-radius:50%;background:#f5a623;display:none}
+.phud.dirty .pdot{display:block}
+@media (max-width:760px){ .phud .plbl{display:none} }
+.pnotes{position:fixed;left:0;right:0;bottom:0;height:var(--pnh,30vh);background:var(--panel);border-top:1px solid var(--line);
+  display:flex;flex-direction:column;z-index:15;box-sizing:border-box;padding:10px 16px 12px}
+.pnotes[hidden]{display:none}
+.pnotes header{display:flex;align-items:center;gap:10px;margin:0 0 6px;font-size:13.5px;color:var(--muted);min-width:0}
+.pnotes header b{color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pnotes header .psp{flex:1}
+.pnotes textarea,#pvNote{flex:1;resize:none;width:100%;box-sizing:border-box;font:inherit;font-size:18px;line-height:1.55;padding:10px 12px;
+  border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--ink);min-height:60px}
+.pnotes textarea:focus,#pvNote:focus{outline:2px solid var(--acc,#2f6fde);outline-offset:-1px}
+.psave-st{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.psave-st.dirty{color:#b26a00}
+#pblack{position:fixed;inset:0;background:#000;z-index:30;display:none;cursor:none}
+#pblack.pon{display:block}
+.pgrid{position:fixed;inset:0;background:#0e1011;z-index:25;overflow:auto;padding:28px 28px 90px;box-sizing:border-box}
+.pgrid[hidden]{display:none}
+.pgrid .pgh{display:flex;align-items:center;gap:12px;color:#fff;margin:-28px -28px 18px;padding:16px 28px;font-size:18px;font-weight:600;position:sticky;top:-28px;background:#0e1011;z-index:1}
+.pgrid .pgh .psp{flex:1}
+.pgrid .pgl{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:20px 18px}
+.pgrid .pgi{all:unset;box-sizing:border-box;cursor:pointer;color:#cfd4d8;font-size:13px;line-height:1.4;display:flex;flex-direction:column;gap:7px;min-width:0}
+.pgrid .pgi .pth{position:relative;aspect-ratio:16/9;overflow:hidden;border-radius:7px;background:#fff;outline:3px solid transparent;outline-offset:2px}
+.pgrid .pgi:hover .th{outline-color:rgba(255,255,255,.35)}
+.pgrid .pgi.cur .th{outline-color:#4ea1ff}
+.pgrid .pgi:focus-visible .th{outline-color:#8fc1ff}
+.pgrid .pgi .pgt{display:flex;gap:6px;min-width:0}
+.pgrid .pgi .pgt b{color:#fff;flex:none}
+.pgrid .pgi .pgt span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pgrid .pgi .pnt{display:inline-block;margin-left:auto;flex:none;color:#f5c26b}
+.pth .pfit,.pv-box .pfit{transform-origin:0 0;left:0;top:0}
+.pth *,.pv-box *{pointer-events:none!important}
+.pth .dsbody,.pv-box .dsbody{overflow:hidden}
+.ptoast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:rgba(18,20,22,.93);color:#fff;padding:10px 16px;border-radius:10px;
+  z-index:40;opacity:0;transition:opacity .2s;pointer-events:none;font-size:14px;max-width:calc(100vw - 32px);text-align:center}
+.ptoast.pon{opacity:1}
+.phelp{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:35;background:var(--panel);color:var(--ink);border-radius:16px;
+  box-shadow:0 20px 60px rgba(0,0,0,.45);padding:20px 24px;width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto;font-size:14.5px}
+.phelp[hidden]{display:none}
+.phelp h2{margin:0 0 10px;font-size:18px}
+.phelp table{border-collapse:collapse;width:100%}
+.phelp td{padding:5px 0;vertical-align:top;border-bottom:1px solid var(--line-soft)}
+.phelp td:first-child{width:46%;color:var(--muted)}
+.phelp kbd{font:600 12px var(--mono);background:var(--panel-2);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 6px;margin-right:3px;color:var(--ink)}
+.phelp p{margin:12px 0 0;color:var(--muted);font-size:13px;line-height:1.6}
+/* ---- Presenter view (หน้าต่างแยก) ---- */
+body.pvw{overflow:hidden;background:#15181a!important;color:#e9ecef;display:flex;flex-direction:column;height:100vh;margin:0}
+.pv-top,.pv-bot{display:flex;align-items:center;gap:12px;padding:9px 16px;background:#0e1011;font-size:14px;flex:none}
+.pv-top .pv-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.pv-top .pv-pos{font:600 15px var(--mono);color:#c9d1d6;white-space:nowrap}
+.psp{flex:1}
+.pv-timer{display:flex;align-items:center;gap:6px}
+.pv-timer b{font:600 28px var(--mono);font-variant-numeric:tabular-nums;color:#fff;min-width:96px;text-align:right}
+.pv-timer.paused b{color:#f5c26b}
+.pv-clock{font:500 18px var(--mono);color:#9aa3a8;margin-left:8px}
+.pv-main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(300px,1fr);gap:16px;padding:14px 16px}
+.pv-cur{display:flex;flex-direction:column;min-height:0;min-width:0}
+.pv-side{display:flex;flex-direction:column;min-height:0;min-width:0}
+.pv-lab{font-size:12.5px;color:#9aa3a8;margin:0 0 6px;display:flex;align-items:center;gap:6px;min-height:26px}
+.pv-box{position:relative;overflow:hidden;border-radius:8px;background:#000;width:100%}
+.pv-cur .pv-box{flex:1;min-height:0}
+.pv-next{aspect-ratio:16/9;flex:none;margin-bottom:12px;opacity:.95}
+.pv-next .pv-end{position:absolute;inset:0;display:grid;place-items:center;color:#777;font-size:15px}
+#pvNote{background:#1d2124;color:#f1f3f5;border-color:#333a3e}
+.pv-save{display:flex;align-items:center;gap:10px;margin-top:8px}
+.pv-save .psave-st{color:#9aa3a8}.pv-save .psave-st.dirty{color:#f5c26b}
+.pvb{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:9px;
+  background:#262b2e;color:#fff;font-size:14px;white-space:nowrap}
+.pvb:hover{background:#30363a}
+.pvb.pri{background:#2f6fde}.pvb.pri:hover{background:#3b7cf0}
+.pvb.psm{padding:4px 9px;font-size:12.5px}
+.pvb .ico{width:17px;height:17px}
+.pv-bot .phint{color:#7d878d;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media print{ .phud,.pnotes,.pgrid,.ptoast,.phelp{display:none!important} }
+`;
+
+/* ---- โค้ดที่ทำงานในไฟล์นำเสนอ (ฟังก์ชันนี้ไม่ถูกเรียกในแอป — ถูกคัดลอกไปใส่ในไฟล์ .html ตอนส่งออก) ---- */
+function presRuntime(){
+  let PRISTINE='<!doctype html>\n'+document.documentElement.outerHTML;
+  const q=s=>document.querySelector(s);
+  const D=JSON.parse(q('#deckData').textContent);
+  const NF=(()=>{ try{ return JSON.parse(q('#deckNotes').textContent||'{}')||{}; }catch(e){ return {}; } })();
+  let NOTES=Object.assign({},NF.notes||{});
+  const LSK='ci_deck_'+D.id;
+  let dirty=false, lsT=0;
+  try{ const ls=JSON.parse(localStorage.getItem(LSK)||'null');
+    if(ls&&ls.notes&&ls.ts>(NF.saved||0)){ NOTES=ls.notes; dirty=true; } }catch(e){}
+  records=D.records;
+  Object.assign(DBS,{sheet:'',year:'',bldg:'',lv:new Set(),dm:'',dmg:'',rep:'',date:'',gap:false,dmAll:false,prioAll:false});
+  if(D.db){ if(D.db.view) DBS.view=D.db.view; if(D.db.sort) DBS.sort=D.db.sort; }
+  const S=D.slides, NS=S.length;
+  const REC_W=338.7/25.4*96, REC_H=190.5/25.4*96, DASH_W=1280, DASH_H=720;
+  const dimOf=s=>s.k==='dash'?[DASH_W,DASH_H]:[REC_W,REC_H];
+  let idx=0;
+  const h0=parseInt(String(location.hash||'').replace('#',''),10);
+  if(h0>=1&&h0<=NS) idx=h0-1;
+
+  /* ---------- เนื้อหาสไลด์ ---------- */
+  function dashHtml(id){
+    const meta=S.find(s=>s.id===id)||{t:''};
+    const base=dbBase(), list=sortedRecords(dbScope()), n=list.length;
+    const sheets=[...new Set(base.map(r=>String(r.sheet||'').trim()).filter(Boolean))];
+    const yrs=[...new Set(base.map(r=>dbYearTxt(r.year)).filter(Boolean))];
+    const rng=dbDateRange(base);
+    const sub=[sheets.length===1?'<b>'+hesc(sheets[0])+'</b>':(sheets.length?'<b>'+sheets.length+' งานตรวจสอบ</b>':''),
+      yrs.length===1?'ปี '+hesc(yrs[0]):'', rng?'ตรวจ '+hesc(rng):'',
+      dbHasFilter()?('แสดง <b>'+n+'</b> จาก '+base.length+' จุดตรวจ'):(base.length+' จุดตรวจ')].filter(Boolean).join(' · ');
+    let body;
+    if(!n) body='<div class="dbempty">'+ico('filter')+'<b>ไม่พบรายการตามตัวกรองที่เลือก</b><span>ลองเอาตัวกรองบางรายการออก</span>'
+      +'<button type="button" class="btn pri" data-dbx="all">ล้างตัวกรองทั้งหมด</button></div>';
+    else if(id==='d:sum') body=dbHero(list,n)+dbKpis(list,n);
+    else if(id==='d:dmg') body=dbDamage(list,n)+dbRepair();
+    else if(id==='d:heat') body=dbHeat(list);
+    else body=dbPrio(list)+dbTimeline();
+    return '<div class="dslide" data-dash="'+id+'"><header class="dsh"><h1>'+hesc(meta.t)+'</h1><p class="dbsub">'+sub+'</p></header>'
+      +'<div class="dbbar">'+dbFilters()+'</div><div class="dsbody"><div class="dbgrid">'+body+'</div></div></div>'
+      .replace('กดรายการเพื่อเปิดแก้ไขในหน้า Data Collection','กดรายการเพื่อไปสไลด์ของจุดนั้น')
+      .replace(/title="เปิดแก้ไขรายการ /g,'title="ไปสไลด์ของจุด ');
+  }
+  const slideInner=i=>S[i].k==='dash'?dashHtml(S[i].id):S[i].h;
+  function fitEl(el,box,i,contain){
+    const [w,h]=dimOf(S[i]);
+    el.style.width=w+'px'; el.style.height=h+'px';
+    const bw=box.clientWidth, bh=box.clientHeight;
+    if(contain===false){ el.style.transform='scale('+(bw/w)+')'; return; }
+    const s=Math.min(bw/w,bh/h)||1;
+    el.style.transform='translate(-50%,-50%) scale('+s+')';
+  }
+  function makeFit(i){ const el=document.createElement('div'); el.className='pfit '+(S[i].k==='dash'?'pdash':'prec'); el.innerHTML=slideInner(i); return el; }
+
+  /* ---------- โครงหน้า ---------- */
+  const B=(act,icon,lbl,title)=>'<button type="button" data-act="'+act+'" title="'+hesc(title||lbl)+'" aria-label="'+hesc(title||lbl)+'">'
+    +ico(icon)+(lbl?'<span class="plbl">'+hesc(lbl)+'</span>':'')+'</button>';
+  q('#deck').innerHTML='<div class="pstage" id="pStage" role="region" aria-roledescription="สไลด์" aria-live="polite"></div>'
+    +'<nav class="phud" id="pHud" aria-label="ควบคุมการนำเสนอ">'
+      +B('prev','chevronLeft','','สไลด์ก่อนหน้า (←)')+'<span class="ppos" id="pPos"></span>'+B('next','chevronRight','','สไลด์ถัดไป (→)')
+      +'<span class="psep"></span>'+B('grid','list','ทุกสไลด์','ดูทุกสไลด์ (G)')+B('notes','pencil','โน้ต','โน้ตผู้นำเสนอ (N)')
+      +B('presenter','fileSlide','Presenter','Presenter view — เปิดหน้าต่างผู้นำเสนอ (P)')+B('fs','expand','เต็มจอ','เต็มจอ (F)')
+      +'<span class="psep"></span><button type="button" data-act="save" title="บันทึกโน้ตลงไฟล์ (Ctrl+S)" aria-label="บันทึกโน้ตลงไฟล์">'+ico('save')+'<span class="plbl">บันทึก</span><i class="pdot"></i></button>'
+      +B('help','help','','คีย์ลัด (?)')+'</nav>'
+    +'<aside class="pnotes" id="pNotes" hidden aria-label="โน้ตผู้นำเสนอ"><header><span>โน้ตผู้นำเสนอ ·</span><b id="pNoteT"></b><span class="psp"></span>'
+      +'<span class="psave-st" id="pSaveSt"></span><button type="button" class="btn sm pri" data-act="save">'+ico('save')+'บันทึกลงไฟล์</button>'
+      +'<button type="button" class="btn sm" data-act="notes" title="ปิดแถบโน้ต (N)">'+ico('x')+'</button></header>'
+      +'<textarea id="pNoteTa" placeholder="พิมพ์โน้ตสำหรับสไลด์นี้… (แสดงใน Presenter view · บันทึกลงไฟล์ด้วย Ctrl+S)"></textarea></aside>'
+    +'<div class="pgrid" id="pGrid" hidden role="dialog" aria-label="ทุกสไลด์"></div>'
+    +'<div id="pblack"></div><div class="ptoast" id="pToast" role="status"></div>'
+    +'<div class="phelp" id="pHelp" hidden role="dialog" aria-label="คีย์ลัด"><h2>คีย์ลัดระหว่างนำเสนอ</h2><table>'
+      +[['<kbd>→</kbd><kbd>Space</kbd><kbd>PgDn</kbd>','สไลด์ถัดไป (คลิกที่สไลด์รายการก็ได้)'],
+        ['<kbd>←</kbd><kbd>PgUp</kbd>','สไลด์ก่อนหน้า'],['<kbd>Home</kbd> / <kbd>End</kbd>','สไลด์แรก / สุดท้าย'],
+        ['พิมพ์เลข แล้ว <kbd>Enter</kbd>','ไปสไลด์ที่ระบุ'],['<kbd>F</kbd>','เต็มจอ / ออกจากเต็มจอ'],
+        ['<kbd>P</kbd>','Presenter view (หน้าต่างแยก — ลากไปจอโน้ตบุ๊ก)'],['<kbd>N</kbd>','แถบโน้ตผู้นำเสนอ'],
+        ['<kbd>G</kbd>','ดูทุกสไลด์'],['<kbd>B</kbd> / <kbd>.</kbd>','จอดำ'],['<kbd>Ctrl</kbd>+<kbd>S</kbd>','บันทึกโน้ตลงไฟล์ .html'],
+        ['<kbd>Esc</kbd>','ปิดหน้าต่างย่อย / ออกจากจอดำ']].map(r=>'<tr><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>').join('')
+      +'</table><p>สไลด์ Dashboard กดตัวกรอง ระดับ แท่งกราฟ ชื่ออาคาร ได้เหมือนในแอป — ตัวกรองใช้ร่วมกันทุกหน้า Dashboard · '
+      +'กดรายการใน "จุดที่ต้องดำเนินการก่อน" เพื่อไปสไลด์ของจุดนั้น · โน้ตที่พิมพ์จะจำไว้ในเบราว์เซอร์นี้ทันที '
+      +'แต่ต้องกด "บันทึก" เพื่อเขียนลงไฟล์ (ส่งต่อให้คนอื่นได้)</p></div>';
+  const stage=q('#pStage'), hud=q('#pHud'), ta=q('#pNoteTa');
+  const cache=new Array(NS).fill(null);
+  let curEl=null;
+
+  function toast(msg,ms){ const t=q('#pToast'); t.textContent=msg; t.classList.add('pon'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('pon'),ms||2600); }
+  function show(){
+    let el=cache[idx];
+    if(!el){ el=cache[idx]=makeFit(idx); }
+    else if(S[idx].k==='dash') el.innerHTML=dashHtml(S[idx].id);
+    if(curEl!==el){ stage.replaceChildren(el); curEl=el; }
+    fitEl(el,stage,idx);
+    q('#pPos').textContent=(idx+1)+' / '+NS;
+    const ds=el.querySelector('.dsbody'); if(ds) ds.scrollTop=0;
+    syncNotesUi(); syncPresenter();
+    try{ history.replaceState(null,'','#'+(idx+1)); }catch(e){}
+    document.title=(idx+1)+'/'+NS+' · '+D.title;
+  }
+  function go(i){ i=Math.max(0,Math.min(NS-1,i)); if(i===idx&&curEl) return; idx=i; show(); }
+  const next=()=>{ if(idx<NS-1) go(idx+1); };
+  const prev=()=>{ if(idx>0) go(idx-1); };
+  function redrawDash(){
+    if(S[idx].k!=='dash'||!curEl) return;
+    const ds=curEl.querySelector('.dsbody'), st=ds?ds.scrollTop:0;
+    curEl.innerHTML=dashHtml(S[idx].id);
+    const nd=curEl.querySelector('.dsbody'); if(nd) nd.scrollTop=st;
+    syncPresenter();
+  }
+
+  /* ---------- Dashboard: การกด (ชุดเดียวกับหน้า Dashboard ในแอป) ---------- */
+  stage.addEventListener('change',e=>{
+    const id=e.target.id;
+    if(id==='dbSheet') DBS.sheet=e.target.value; else if(id==='dbYear') DBS.year=e.target.value; else if(id==='dbBldg') DBS.bldg=e.target.value; else return;
+    redrawDash(); e.target.blur&&e.target.blur();
+  });
+  function dashClick(t){
+    const d=t.dataset;
+    if(d.dblvc!=null){ if(d.dblvc==='all') DBS.lv.clear(); else dbToggleLv(+d.dblvc); return true; }
+    if(d.dbkpi){ const k=d.dbkpi;
+      if(k==='iss'){ const on=DBS.lv.size===4&&[2,3,4,5].every(n=>DBS.lv.has(n)); dbSetLv(on?[]:[2,3,4,5]); }
+      if(k==='urg'){ const on=DBS.lv.size===2&&DBS.lv.has(4)&&DBS.lv.has(5); dbSetLv(on?[]:[4,5]); }
+      if(k==='gap') DBS.gap=!DBS.gap; return true; }
+    if(d.dbscroll){ const h=S.findIndex(s=>s.id==='d:heat'); if(h>=0) go(h); return false; }
+    if(d.dbview){ DBS.view=d.dbview; DBS.dmAll=false; if(d.dbview==='group') DBS.dm=''; else DBS.dmg=''; return true; }
+    if(d.dbsort){ DBS.sort=d.dbsort; return true; }
+    if(d.dbmore){ if(d.dbmore==='dm') DBS.dmAll=!DBS.dmAll; else DBS.prioAll=!DBS.prioAll; return true; }
+    if(d.dbdm1!=null){ DBS.dm=DBS.dm===d.dbdm1?'':d.dbdm1; DBS.dmg=''; return true; }
+    if(d.dbdmg!=null){ DBS.dmg=DBS.dmg===d.dbdmg?'':d.dbdmg; DBS.dm=''; return true; }
+    if(d.dbrep!=null){ DBS.rep=DBS.rep===d.dbrep?'':d.dbrep; return true; }
+    if(d.dbdate!=null){ DBS.date=DBS.date===d.dbdate?'':d.dbdate; return true; }
+    if(d.dbbldg!=null){ DBS.bldg=DBS.bldg===d.dbbldg?'':d.dbbldg; return true; }
+    if(d.dbcell){ const i=d.dbcell.lastIndexOf('|'), k=d.dbcell.slice(0,i), n=+d.dbcell.slice(i+1);
+      if(DBS.bldg===k&&DBS.lv.size===1&&DBS.lv.has(n)){ DBS.bldg=''; DBS.lv.clear(); } else { DBS.bldg=k; dbSetLv([n]); }
+      return true; }
+    if(d.dbx){ const k=d.dbx;
+      if(k==='all'){ DBS.bldg=''; DBS.lv.clear(); DBS.dm=''; DBS.dmg=''; DBS.rep=''; DBS.date=''; DBS.gap=false; }
+      else if(k==='gap') DBS.gap=false; else DBS[k]='';
+      return true; }
+    if(d.dbopen){ const j=S.findIndex(s=>s.rid===d.dbopen);
+      if(j>=0) go(j); else toast('จุดนี้ไม่ได้อยู่ในชุดสไลด์ที่ส่งออก'); return false; }
+    return false;
+  }
+  let swipe=null, swiped=false;
+  stage.addEventListener('pointerdown',e=>{ swipe={x:e.clientX,y:e.clientY}; swiped=false; });
+  stage.addEventListener('pointerup',e=>{ if(!swipe) return; const dx=e.clientX-swipe.x, dy=e.clientY-swipe.y; swipe=null;
+    if(e.pointerType!=='mouse'&&Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5){ swiped=true; if(dx<0) next(); else prev(); } });
+  stage.addEventListener('click',e=>{
+    if(swiped){ swiped=false; return; }
+    if(e.target.closest('.dslide')){
+      const t=e.target.closest('button,[data-dblvc]');
+      if(t&&dashClick(t)) redrawDash();
+      if(t&&document.activeElement&&document.activeElement.blur) document.activeElement.blur();
+      return; }
+    if(e.target.closest('.pfit.prec')) next();
+  });
+
+  /* ---------- โน้ต ---------- */
+  const fileName=()=>{ try{ const n=decodeURIComponent(location.pathname.split('/').pop()||''); if(/\.html?$/i.test(n)) return n; }catch(e){} return 'Inspection-Present.html'; };
+  function syncSaveUi(){
+    hud.classList.toggle('dirty',dirty);
+    [q('#pSaveSt'),PW&&!PW.closed&&PW.document.getElementById('pvSaveSt')].forEach(el=>{ if(!el) return;
+      el.textContent=dirty?'ยังไม่ได้บันทึกลงไฟล์ (จำไว้ในเบราว์เซอร์นี้แล้ว)':'บันทึกลงไฟล์แล้ว'; el.classList.toggle('dirty',dirty); });
+  }
+  function syncNotesUi(){
+    const s=S[idx];
+    q('#pNoteT').textContent=(idx+1)+'. '+s.t+(s.s?' — '+s.s:'');
+    if(document.activeElement!==ta) ta.value=NOTES[s.id]||'';
+    syncSaveUi();
+  }
+  function setNote(v,src){
+    const id=S[idx].id;
+    if(String(v).trim()) NOTES[id]=v; else delete NOTES[id];
+    dirty=true; syncSaveUi();
+    if(src!==ta&&document.activeElement!==ta) ta.value=v;
+    const pn=PW&&!PW.closed&&PW.document.getElementById('pvNote'); if(pn&&src!==pn) pn.value=v;
+    clearTimeout(lsT); lsT=setTimeout(()=>{ try{ localStorage.setItem(LSK,JSON.stringify({ts:Date.now(),notes:NOTES})); }catch(e){} },300);
+  }
+  ta.addEventListener('input',()=>setNote(ta.value,ta));
+  function toggleNotes(on){
+    const p=q('#pNotes'); on=on==null?p.hidden:on; p.hidden=!on;
+    document.body.classList.toggle('notes-on',on); q('[data-act="notes"]').setAttribute('aria-pressed',String(on));
+    requestAnimationFrame(()=>{ if(curEl) fitEl(curEl,stage,idx); if(on) ta.focus(); });
+  }
+  let FH=null;
+  async function save(win){
+    win=win||window;
+    const json=JSON.stringify({saved:Date.now(),notes:NOTES}).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
+    const out=PRISTINE.replace(/(<script type="application\/json" id="deckNotes">)[\s\S]*?(<\/script>)/,(m,a,b)=>a+json+b);
+    const blob=new Blob([out],{type:'text/html'});
+    try{
+      if(win.showSaveFilePicker){
+        if(!FH) FH=await win.showSaveFilePicker({suggestedName:fileName(),types:[{description:'ไฟล์นำเสนอ (.html)',accept:{'text/html':['.html']}}]});
+        const w=await FH.createWritable(); await w.write(blob); await w.close();
+        toast('บันทึกโน้ตลงไฟล์ '+FH.name+' แล้ว',3500);
+      }else{
+        const a=win.document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fileName();
+        win.document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+        toast('ดาวน์โหลดไฟล์ที่มีโน้ตแล้ว — ใช้ไฟล์ใหม่นี้แทนไฟล์เดิม',5000);
+      }
+      PRISTINE=out; dirty=false; try{ localStorage.removeItem(LSK); }catch(e){} syncSaveUi();
+    }catch(e){ if(e&&e.name==='AbortError') return; FH=null; toast('บันทึกไม่สำเร็จ: '+((e&&e.message)||e),5000); }
+  }
+
+  /* ---------- ทุกสไลด์ ---------- */
+  function openGrid(){
+    const g=q('#pGrid');
+    g.innerHTML='<div class="pgh">ทุกสไลด์ ('+NS+')<span class="psp"></span><button type="button" class="btn sm" data-act="grid">'+ico('x')+'ปิด</button></div>'
+      +'<div class="pgl">'+S.map((s,i)=>'<button type="button" class="pgi'+(i===idx?' cur':'')+'" data-go="'+i+'"><span class="pth"></span>'
+        +'<span class="pgt"><b>'+(i+1)+'.</b><span>'+hesc(s.t+(s.s?' — '+s.s:''))+'</span>'+(NOTES[s.id]?'<i class="pnt" title="มีโน้ต">✎</i>':'')+'</span></button>').join('')+'</div>';
+    g.hidden=false;
+    const ths=[...g.querySelectorAll('.pth')];
+    ths.forEach((th,i)=>{ const el=makeFit(i); th.appendChild(el); fitEl(el,th,i,false); });
+    const c=g.querySelector('.pgi.cur'); if(c){ c.scrollIntoView({block:'center'}); c.focus(); }
+  }
+  const closeGrid=()=>{ const g=q('#pGrid'); g.hidden=true; g.innerHTML=''; };
+  q('#pGrid').addEventListener('click',e=>{ const b=e.target.closest('[data-go]'); if(b){ closeGrid(); go(+b.dataset.go); } });
+
+  /* ---------- เต็มจอ / จอดำ / HUD ---------- */
+  function toggleFs(){
+    const d=document, el=d.documentElement;
+    if(d.fullscreenElement||d.webkitFullscreenElement){ (d.exitFullscreen||d.webkitExitFullscreen).call(d); }
+    else{ const f=el.requestFullscreen||el.webkitRequestFullscreen; if(f) f.call(el); else toast('เบราว์เซอร์นี้ไม่รองรับโหมดเต็มจอ'); }
+  }
+  ['fullscreenchange','webkitfullscreenchange'].forEach(ev=>document.addEventListener(ev,()=>{
+    const on=!!(document.fullscreenElement||document.webkitFullscreenElement);
+    const b=q('[data-act="fs"]'); b.innerHTML=ico(on?'shrink':'expand')+'<span class="plbl">'+(on?'ออกเต็มจอ':'เต็มจอ')+'</span>';
+    setTimeout(()=>{ if(curEl) fitEl(curEl,stage,idx); },60); }));
+  const black=on=>q('#pblack').classList.toggle('pon',on==null?!q('#pblack').classList.contains('pon'):on);
+  q('#pblack').addEventListener('click',()=>black(false));
+  let idleT=0;
+  function wake(){ hud.classList.remove('idle'); clearTimeout(idleT); idleT=setTimeout(()=>{ if(!hud.matches(':hover')&&!hud.contains(document.activeElement)) hud.classList.add('idle'); },2600); }
+  ['mousemove','pointerdown'].forEach(ev=>document.addEventListener(ev,wake,{passive:true}));
+  wake();
+  const help=on=>{ const h=q('#pHelp'); h.hidden=on==null?!h.hidden:!on; };
+  q('#pHelp').addEventListener('click',()=>help(false));
+
+  function act(a,win){
+    if(a==='prev') prev(); else if(a==='next') next();
+    else if(a==='grid'){ if(q('#pGrid').hidden) openGrid(); else closeGrid(); }
+    else if(a==='notes') toggleNotes();
+    else if(a==='presenter') openPresenter();
+    else if(a==='fs') toggleFs();
+    else if(a==='save') save(win);
+    else if(a==='help') help();
+  }
+  document.addEventListener('click',e=>{ const b=e.target.closest('[data-act]'); if(b&&!b.closest('.pstage')){ act(b.dataset.act); if(b.blur) b.blur(); } });
+
+  /* ---------- คีย์บอร์ด (ใช้ทั้งหน้าต่างหลักและ Presenter view) ---------- */
+  let numBuf='', numT=0;
+  function onKey(e,win){
+    const t=e.target, typing=t&&t.tagName&&(/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)||t.isContentEditable);
+    const k=e.key;
+    if((e.ctrlKey||e.metaKey)&&!e.altKey&&String(k).toLowerCase()==='s'){ e.preventDefault(); save(win); return; }
+    if(k==='Escape'){
+      if(typing&&t.blur){ t.blur(); return; }
+      if(!q('#pHelp').hidden){ help(false); return; }
+      if(!q('#pGrid').hidden){ closeGrid(); return; }
+      if(q('#pblack').classList.contains('pon')){ black(false); return; }
+      return; }
+    if(typing||e.ctrlKey||e.metaKey||e.altKey) return;
+    if(!q('#pHelp').hidden) help(false);
+    if(t&&t.tagName==='BUTTON'&&(k===' '||k==='Enter')) return;
+    if(/^[0-9]$/.test(k)){ numBuf+=k; clearTimeout(numT); numT=setTimeout(()=>numBuf='',1600); toast('ไปสไลด์ '+numBuf+' — กด Enter',1500); return; }
+    let done=true;
+    switch(k){
+      case 'ArrowRight': case 'ArrowDown': case 'PageDown': case ' ': case 'Spacebar': next(); break;
+      case 'Enter': if(numBuf){ go(+numBuf-1); numBuf=''; } else next(); break;
+      case 'ArrowLeft': case 'ArrowUp': case 'PageUp': case 'Backspace': prev(); break;
+      case 'Home': go(0); break;
+      case 'End': go(NS-1); break;
+      case 'f': case 'F': if(win===window) toggleFs(); else done=false; break;
+      case 'p': case 'P': openPresenter(); break;
+      case 'n': case 'N': if(win===window) toggleNotes(); else { const pn=PW.document.getElementById('pvNote'); pn&&pn.focus(); } break;
+      case 'g': case 'G': if(win===window) act('grid'); else done=false; break;
+      case 'b': case 'B': case '.': black(); break;
+      case '?': help(); break;
+      default: done=false;
+    }
+    if(done){ e.preventDefault(); if(!q('#pGrid').hidden&&k!=='g'&&k!=='G') closeGrid(); }
+  }
+  document.addEventListener('keydown',e=>onKey(e,window));
+  window.addEventListener('resize',()=>{ if(curEl) fitEl(curEl,stage,idx); });
+  window.addEventListener('beforeunload',e=>{ try{ if(PW&&!PW.closed) PW.close(); }catch(err){}
+    if(dirty){ e.preventDefault(); e.returnValue=''; } });
+
+  /* ---------- Presenter view: หน้าต่างแยก (เนื้อหาเขียนจากหน้าต่างหลัก จึงไม่ต้องโหลดไฟล์ซ้ำ) ---------- */
+  let PW=null, tStart=0, tAcc=0, tRun=false, tickI=0, pvFs=18;
+  try{ pvFs=+localStorage.getItem('ci_pv_fs')||18; }catch(e){}
+  const pad=n=>String(n).padStart(2,'0');
+  function tickPv(){
+    if(!PW||PW.closed){ clearInterval(tickI); return; }
+    const d=PW.document, ms=tAcc+(tRun?Date.now()-tStart:0), s=Math.floor(ms/1000);
+    const T=d.getElementById('pvT'); if(T) T.textContent=(s>=3600?Math.floor(s/3600)+':':'')+pad(Math.floor(s/60)%60)+':'+pad(s%60);
+    const now=new Date(), C=d.getElementById('pvC'); if(C) C.textContent=pad(now.getHours())+':'+pad(now.getMinutes());
+    const W=d.querySelector('.pv-timer'); if(W) W.classList.toggle('paused',!tRun);
+  }
+  function openPresenter(){
+    if(PW&&!PW.closed){ PW.focus(); return; }
+    const w=window.open('','ci_presenter_'+D.id,'width=1280,height=800');
+    if(!w){ toast('เบราว์เซอร์บล็อกหน้าต่างใหม่ — อนุญาตป๊อปอัปสำหรับไฟล์นี้ แล้วกด P อีกครั้ง',6000); return; }
+    PW=w;
+    const css=[...document.querySelectorAll('style')].map(s=>s.textContent).join('\n');
+    const PB=(a,icon,lbl,cls)=>'<button type="button" class="pvb'+(cls?' '+cls:'')+'" data-pv="'+a+'">'+(icon?ico(icon):'')+(lbl?'<span>'+lbl+'</span>':'')+'</button>';
+    const html='<!doctype html><html lang="th" data-theme="light"><head><meta charset="utf-8"><title>Presenter view — '+hesc(D.title)+'</title>'
+      +'<style>'+css+'</style></head><body class="deck pvw">'
+      +'<div class="pv-top"><b class="pv-title" id="pvTitle"></b><span class="pv-pos" id="pvPos"></span><span class="psp"></span>'
+        +'<span class="pv-timer"><b id="pvT">00:00</b>'+PB('pause','','หยุด','psm')+PB('reset','','เริ่มใหม่','psm')+'</span><span class="pv-clock" id="pvC"></span></div>'
+      +'<div class="pv-main"><section class="pv-cur"><div class="pv-lab">สไลด์ปัจจุบัน</div><div class="pv-box" id="pvCur"></div></section>'
+        +'<section class="pv-side"><div class="pv-lab">ถัดไป</div><div class="pv-box pv-next" id="pvNext"></div>'
+        +'<div class="pv-lab">โน้ตผู้นำเสนอ<span class="psp"></span>'+PB('fs-','','A−','psm')+PB('fs+','','A+','psm')+'</div>'
+        +'<textarea id="pvNote" placeholder="พิมพ์โน้ตสำหรับสไลด์นี้…"></textarea>'
+        +'<div class="pv-save"><span class="psave-st" id="pvSaveSt"></span><span class="psp" style="flex:1"></span>'+PB('save','save','บันทึกลงไฟล์','pri')+'</div></section></div>'
+      +'<div class="pv-bot">'+PB('prev','chevronLeft','ก่อนหน้า')+PB('next','chevronRight','ถัดไป')
+        +'<span class="phint">← → เปลี่ยนสไลด์ · พิมพ์เลข + Enter ไปสไลด์ · B จอดำ · N พิมพ์โน้ต · Esc ออกจากช่องโน้ต · Ctrl+S บันทึก</span><span class="psp"></span>'
+        +PB('close','x','ปิด Presenter view')+'</div></body></html>';
+    const d=w.document; d.open(); d.write(html); d.close();
+    d.addEventListener('keydown',e=>onKey(e,w));
+    d.addEventListener('click',e=>{ const b=e.target.closest('[data-pv]'); if(!b) return; const a=b.dataset.pv;
+      if(a==='prev') prev(); else if(a==='next') next(); else if(a==='save') save(w);
+      else if(a==='close') w.close();
+      else if(a==='pause'){ if(tRun){ tAcc+=Date.now()-tStart; tRun=false; b.lastChild.textContent='ต่อ'; } else { tStart=Date.now(); tRun=true; b.lastChild.textContent='หยุด'; } tickPv(); }
+      else if(a==='reset'){ tAcc=0; tStart=Date.now(); tickPv(); }
+      else if(a==='fs-'||a==='fs+'){ pvFs=Math.max(12,Math.min(40,pvFs+(a==='fs+'?2:-2))); try{ localStorage.setItem('ci_pv_fs',String(pvFs)); }catch(err){} d.getElementById('pvNote').style.fontSize=pvFs+'px'; }
+      if(b.blur) b.blur(); });
+    const pn=d.getElementById('pvNote'); pn.style.fontSize=pvFs+'px';
+    pn.addEventListener('input',()=>setNote(pn.value,pn));
+    w.addEventListener('resize',()=>syncPresenter(true));
+    tAcc=0; tStart=Date.now(); tRun=true; clearInterval(tickI); tickI=setInterval(tickPv,1000); tickPv();
+    q('[data-act="presenter"]').setAttribute('aria-pressed','true');
+    w.addEventListener('pagehide',()=>{ try{ q('[data-act="presenter"]').setAttribute('aria-pressed','false'); }catch(e){} });
+    syncPresenter(); syncSaveUi();
+    toast('เปิด Presenter view แล้ว — ลากหน้าต่างนี้ (สไลด์) ไปจอโปรเจกเตอร์แล้วกด F',5000);
+  }
+  let pvIdx=-1;
+  function syncPresenter(resizeOnly){
+    if(!PW||PW.closed) return;
+    const d=PW.document, cur=d.getElementById('pvCur'), nx=d.getElementById('pvNext'); if(!cur) return;
+    const s=S[idx];
+    d.getElementById('pvTitle').textContent=(idx+1)+'. '+s.t+(s.s?' — '+s.s:'');
+    d.getElementById('pvPos').textContent='สไลด์ '+(idx+1)+' / '+NS;
+    if(!resizeOnly||!cur.firstChild){
+      cur.innerHTML=''; const a=d.createElement('div'); a.className='pfit '+(s.k==='dash'?'pdash':'prec'); a.innerHTML=slideInner(idx); cur.appendChild(a);
+      nx.innerHTML='';
+      if(idx<NS-1){ const b=d.createElement('div'); b.className='pfit '+(S[idx+1].k==='dash'?'pdash':'prec'); b.innerHTML=slideInner(idx+1); nx.appendChild(b); }
+      else nx.innerHTML='<div class="pv-end">จบการนำเสนอ</div>';
+      const ds=cur.querySelector('.dsbody'), live=curEl&&curEl.querySelector('.dsbody'); if(ds&&live) ds.scrollTop=live.scrollTop;
+    }
+    const a=cur.querySelector('.pfit'); if(a){ a.style.left='50%'; a.style.top='50%'; a.style.transformOrigin='center center'; fitEl(a,cur,idx); }
+    const b=nx.querySelector('.pfit'); if(b) fitEl(b,nx,idx+1,false);
+    const pn=d.getElementById('pvNote');
+    if(pn&&(pvIdx!==idx||d.activeElement!==pn)) pn.value=NOTES[s.id]||'';
+    pvIdx=idx;
+  }
+  stage.addEventListener('scroll',e=>{ if(PW&&!PW.closed&&e.target.classList&&e.target.classList.contains('dsbody')){
+    const ds=PW.document.querySelector('#pvCur .dsbody'); if(ds) ds.scrollTop=e.target.scrollTop; } },true);
+
+  show();
+  if(dirty) toast('มีโน้ตที่ยังไม่ได้บันทึกลงไฟล์ (กู้คืนจากเบราว์เซอร์นี้) — กด Ctrl+S เพื่อบันทึก',5000);
+}
+
 /* =============== V10: ส่งออกแบบรวม — เลือกขอบเขตครั้งเดียว แล้วกดชนิดไฟล์ =============== */
 /* ขอบเขต 'first' = รายการที่เลือก (ติ๊กใน Inspection List) หรือ รายการที่เปิดอยู่ถ้าไม่ได้ติ๊กอะไร · 'all' = ทุกรายการ
    ค่าเริ่มต้น: มีรายการที่ติ๊ก → 'first' ไม่เช่นนั้น 'all' · ผู้ใช้เลือกเองได้ (จำไว้จนกว่าสถานะการติ๊กจะเปลี่ยนระหว่าง ว่าง/ไม่ว่าง) */
@@ -7469,7 +8031,7 @@ function renderExportScope(){
   else hint.textContent='';
   const set=(id,n,txt)=>{ const b=$('#'+id); if(!b) return; b.disabled=!n; const e=b.querySelector('.en'); if(e) e.textContent=n?txt:'—'; };
   const u=st.n;
-  set('expDocx',u,u+' รายการ'); set('expSum',u,u+' รายการ'); set('expPptx',u,u+' รายการ'); set('expPdf',u,u+' รายการ');
+  set('expDocx',u,u+' รายการ'); set('expSum',u,u+' รายการ'); set('expPptx',u,u+' รายการ'); set('expPres',u,u+' รายการ'); set('expPdf',u,u+' รายการ');
   set('expXlsx',st.nAll,'ทั้งหมด '+st.nAll);
   const oc=$('#outCount'); if(oc) oc.textContent=st.nAll?('จะส่งออก '+u+' จาก '+st.nAll+' รายการ'):'ยังไม่มีรายการ';
 }
@@ -9984,6 +10546,9 @@ function wire(){
   $('#expDocx').onclick=()=>exportDocx(expAll());
   $('#expSum').onclick=()=>exportSummary(expAll());
   $('#expPptx').onclick=()=>exportPptx(expAll());
+  $('#expPres').onclick=()=>exportPres(expAll());
+  $('#expNotesImp').onclick=()=>$('#expNotesFile').click();
+  $('#expNotesFile').onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(f) importPresNotes(f); e.target.value=''; };
   $('#expXlsx').onclick=exportXlsx;
   $('#expPdf').onclick=()=>doPrint(expAll());
   $('#expScope').addEventListener('click',e=>{ const b=e.target.closest('[data-scope]'); if(!b||b.disabled) return;
