@@ -7573,11 +7573,18 @@ body.deck.notes-on .pstage{bottom:var(--pnh,30vh)}
 .dslide .dbkpis{grid-column:span 7}
 .dslide .hm td.tp,.dslide .hm th.tp{display:table-cell}
 .dslide .dbempty{min-height:60vh}
-.phud{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;gap:2px;padding:5px;
+/* V12.6: แถบควบคุมอยู่มุมซ้ายล่าง · ย่อเหลือไอคอนเดียว (.mini) · ชี้เมาส์จึงขยายเต็ม · ลากย้ายได้ (.moved = ใช้ตำแหน่งที่ลากไว้) */
+.phud{position:fixed;left:14px;bottom:14px;display:flex;align-items:center;gap:2px;padding:5px;
   background:rgba(18,20,22,.88);color:#fff;border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.35);z-index:20;
   transition:opacity .25s;font-size:14px;max-width:calc(100vw - 20px);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
-body.deck.notes-on .phud{bottom:calc(var(--pnh,30vh) + 12px)}
+body.deck.notes-on .phud:not(.moved){bottom:calc(var(--pnh,30vh) + 12px)}
 .phud.idle{opacity:0;pointer-events:none}
+.phud.mini>:not(.pgrip){display:none}
+.phud .pgrip{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:9px;flex:none;
+  cursor:grab;touch-action:none;color:#fff;opacity:.85}
+.phud .pgrip:hover{background:rgba(255,255,255,.13);opacity:1}
+.phud:not(.mini) .pgrip{width:26px;opacity:.55}
+.phud.dragging,.phud.dragging .pgrip{cursor:grabbing;transition:none;user-select:none}
 .phud button{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 10px;
   border-radius:9px;color:#fff;white-space:nowrap;position:relative}
 .phud button:hover{background:rgba(255,255,255,.13)}
@@ -7743,7 +7750,8 @@ function presRuntime(){
   const B=(act,icon,lbl,title)=>'<button type="button" data-act="'+act+'" title="'+hesc(title||lbl)+'" aria-label="'+hesc(title||lbl)+'">'
     +ico(icon)+(lbl?'<span class="plbl">'+hesc(lbl)+'</span>':'')+'</button>';
   q('#deck').innerHTML='<div class="pstage" id="pStage" role="region" aria-roledescription="สไลด์" aria-live="polite"></div>'
-    +'<nav class="phud" id="pHud" aria-label="ควบคุมการนำเสนอ">'
+    +'<nav class="phud mini" id="pHud" aria-label="ควบคุมการนำเสนอ">'
+      +'<span class="pgrip" title="ชี้เพื่อเปิดแถบควบคุม · ลากเพื่อย้ายตำแหน่ง">'+ico('grip')+'</span>'
       +B('prev','chevronLeft','','สไลด์ก่อนหน้า (←)')+'<span class="ppos" id="pPos"></span>'+B('next','chevronRight','','สไลด์ถัดไป (→)')
       +'<span class="psep"></span>'+B('grid','list','ทุกสไลด์','ดูทุกสไลด์ (G)')+B('notes','pencil','โน้ต','โน้ตผู้นำเสนอ (N)')
       +B('presenter','fileSlide','Presenter','Presenter view — เปิดหน้าต่างผู้นำเสนอ (P)')+B('fs','expand','เต็มจอ','เต็มจอ (F)')
@@ -7958,10 +7966,58 @@ function presRuntime(){
     setTimeout(()=>{ if(curEl) fitEl(curEl,stage,idx); },60); }));
   const black=on=>q('#pblack').classList.toggle('pon',on==null?!q('#pblack').classList.contains('pon'):on);
   q('#pblack').addEventListener('click',()=>black(false));
-  let idleT=0;
-  function wake(){ hud.classList.remove('idle'); clearTimeout(idleT); idleT=setTimeout(()=>{ if(!hud.matches(':hover')&&!hud.contains(document.activeElement)) hud.classList.add('idle'); },2600); }
+  /* ---------- แถบควบคุม: ย่อ / ขยาย / ซ่อน / ลากย้าย ----------
+     ขยับเมาส์ = แสดงแค่ไอคอน · ชี้ที่แถบ = ขยายเต็ม · ไม่ขยับสักพัก = ย่อแล้วซ่อน (คงตำแหน่งที่ลากไว้)
+     ตำแหน่งที่ลากจำไว้ในเบราว์เซอร์นี้ (ใช้กับทุกไฟล์นำเสนอ) */
+  const HUDK='ci_deck_hud';
+  let hudPos=null, idleT=0, colT=0, drag=null;
+  try{ const p=JSON.parse(localStorage.getItem(HUDK)||'null'); if(p&&isFinite(p.x)&&isFinite(p.y)) hudPos=p; }catch(e){}
+  function placeHud(){
+    if(!hudPos){ hud.classList.remove('moved'); hud.style.left=hud.style.top=hud.style.bottom=''; return; }
+    hud.classList.add('moved'); hud.style.bottom='auto';
+    const r=hud.getBoundingClientRect();
+    hud.style.left=Math.max(8,Math.min(hudPos.x,innerWidth-8-r.width))+'px';
+    hud.style.top=Math.max(8,Math.min(hudPos.y,innerHeight-8-r.height))+'px';
+  }
+  const hudBusy=()=>!!drag||hud.matches(':hover')||hud.contains(document.activeElement);
+  function hudExpand(){ clearTimeout(colT); if(hud.classList.contains('mini')){ hud.classList.remove('mini'); placeHud(); } }
+  function hudCollapse(){ if(hudBusy()||hud.classList.contains('mini')) return; hud.classList.add('mini'); placeHud(); }
+  function wake(){ hud.classList.remove('idle'); clearTimeout(idleT);
+    idleT=setTimeout(()=>{ if(hudBusy()) return wake(); hud.classList.add('mini'); hud.classList.add('idle'); placeHud(); },2600); }
   ['mousemove','pointerdown'].forEach(ev=>document.addEventListener(ev,wake,{passive:true}));
-  wake();
+  hud.addEventListener('mouseenter',hudExpand);
+  hud.addEventListener('mouseleave',()=>{ clearTimeout(colT); colT=setTimeout(hudCollapse,450); });
+  hud.addEventListener('focusin',hudExpand);
+  hud.addEventListener('focusout',()=>setTimeout(hudCollapse,0));
+  hud.addEventListener('pointerdown',e=>{
+    if(e.button!==0||e.target.closest('button')) return;
+    const r=hud.getBoundingClientRect();
+    drag={id:e.pointerId,sx:e.clientX,sy:e.clientY,ox:e.clientX-r.left,oy:e.clientY-r.top,moved:false,pt:e.pointerType};
+    hud.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  hud.addEventListener('pointermove',e=>{
+    if(!drag||e.pointerId!==drag.id) return;
+    if(!drag.moved&&Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)<4) return;
+    drag.moved=true; hud.classList.add('dragging');
+    hudPos={x:e.clientX-drag.ox,y:e.clientY-drag.oy}; placeHud();
+  });
+  const endDrag=e=>{
+    if(!drag||e.pointerId!==drag.id) return;
+    const d=drag; drag=null; hud.classList.remove('dragging');
+    try{ hud.releasePointerCapture(e.pointerId); }catch(err){}
+    if(d.moved){
+      hudPos={x:parseFloat(hud.style.left)||0,y:parseFloat(hud.style.top)||0};
+      try{ localStorage.setItem(HUDK,JSON.stringify(hudPos)); }catch(err){}
+    }else if(hud.classList.contains('mini')) hudExpand();          /* แตะไอคอน (จอสัมผัส) = ขยาย */
+    else if(d.pt!=='mouse') hudCollapse();
+    wake();
+  };
+  hud.addEventListener('pointerup',endDrag);
+  hud.addEventListener('pointercancel',endDrag);
+  hud.addEventListener('dblclick',e=>{ if(e.target.closest('button')) return;   /* ดับเบิลคลิกที่จับ = กลับมุมซ้ายล่าง */
+    hudPos=null; try{ localStorage.removeItem(HUDK); }catch(err){} placeHud(); });
+  window.addEventListener('resize',placeHud);
+  placeHud(); wake();
   const help=on=>{ const h=q('#pHelp'); h.hidden=on==null?!h.hidden:!on; };
   q('#pHelp').addEventListener('click',()=>help(false));
 
