@@ -608,18 +608,20 @@ body.dragging-now .rec,body.dragging-now .grp{transition:transform .12s}
 #pvHost{padding:16px}
 #pvHost.hidden{display:none}
 .slidewrap{background:var(--sunk);border:1px solid var(--line);border-radius:var(--r);padding:16px;overflow-x:auto}
-.slide{width:338.7mm;height:190.5mm;background:#fff;color:#000;position:relative;margin:0 auto 16px;
+/* V12.6 — พื้นหลัง/สี/กรอบ ตาม Template.pptx (--sbg = ภาพพื้นหลังของ slideLayout ที่ดึงจากต้นแบบตอนเปิดแอป) */
+.slide{width:338.7mm;height:190.5mm;background:#fff var(--sbg,none) 0 0/100% 100% no-repeat;color:#000;position:relative;margin:0 auto 16px;
   font-family:var(--doc);box-shadow:0 2px 14px rgba(0,0,0,.16);overflow:hidden;transform-origin:top center}
-.slide .stitle{position:absolute;font-weight:700;line-height:1.15;color:#000;overflow:hidden}
+.slide .stitle{position:absolute;box-sizing:border-box;padding:1.27mm 2.54mm;font-weight:700;line-height:1.15;color:#002060;overflow:hidden}
 .slide .ssev{position:absolute;border-collapse:collapse;table-layout:fixed;font-size:16pt;font-weight:700;line-height:1;color:#000}
 .slide .ssev td{border:.5pt solid #000;text-align:center;vertical-align:top;padding:1mm 0 0}
 .slide .ssev td.sh{background:#000;color:#fff}
 .slide .sbadge{position:absolute;display:grid;place-items:center;border-radius:1mm;font-weight:700;font-size:13pt}
-.slide .sinfo{position:absolute;font-size:17pt;line-height:1.28;overflow:hidden}
+.slide .sinfo{position:absolute;box-sizing:border-box;padding:1.27mm 2.54mm;font-size:17pt;line-height:1.28;overflow:hidden;
+  background:#fff;border:.75pt solid #3F3F3F;box-shadow:2.1pt 2.1pt 4pt rgba(0,0,0,.4)}
 .slide .sinfo .row{margin-bottom:.6mm;overflow-wrap:anywhere}
 .slide .sinfo .row b{font-weight:700}
 .slide .sinfo .row span{white-space:pre-wrap}
-.slide .sph{position:absolute;overflow:hidden;background:#f4f4f4;border:.4pt solid #ddd}
+.slide .sph{position:absolute;overflow:hidden;background:#f4f4f4;border:.75pt solid #000;box-sizing:border-box}
 .slide .sph img{width:100%;height:100%;object-fit:cover;display:block}
 /* ---- พรีวิวตารางสรุป (A4 แนวนอน) ---- */
 .sumwrap{background:var(--sunk);border:1px solid var(--line);border-radius:var(--r);padding:16px;overflow-x:auto}
@@ -3012,7 +3014,7 @@ button.kpi:hover .kgo,button.kpi:focus-visible .kgo{opacity:1}
         <button class="btn expf" id="expDocx" type="button"><span data-ico="fileDoc"></span><span class="et"><b>Word (.docx)</b></span><span class="en"></span></button>
         <button class="btn expf" id="expSum" type="button"><span data-ico="fileDoc"></span><span class="et"><b>ตารางสรุป (.docx)</b></span><span class="en"></span></button>
         <button class="btn expf" id="expPptx" type="button"><span data-ico="fileSlide"></span><span class="et"><b>PowerPoint (.pptx)</b></span><span class="en"></span></button>
-        <button class="btn expf" id="expPres" type="button"><span data-ico="expand"></span><span class="et"><b>นำเสนอ (.html)</b><small class="es">เต็มจอ · Presenter view · โน้ต</small></span><span class="en"></span></button>
+        <button class="btn expf" id="expPres" type="button"><span data-ico="expand"></span><span class="et"><b>นำเสนอ (.html)</b></span><span class="en"></span></button>
         <button class="btn expf" id="expPdf" type="button"><span data-ico="printer"></span><span class="et"><b>PDF</b></span><span class="en"></span></button>
         <button class="btn expf" id="expXlsx" type="button"><span data-ico="fileSheet"></span><span class="et"><b>Excel Database (.xlsx)</b></span><span class="en"></span></button>
       </div>
@@ -5678,7 +5680,7 @@ function wireAnnClip(){
 let cur=blank(), records=[], selected=new Set();
 let lvFilter=new Set(), dmFilter=new Set(), openGroups=new Set();
 let saving=false, saveFailed=false, lastSaved={id:null,t:null};   /* V9: สถานะการบันทึก */
-let TPL=null, PPTX_TPL=null, SUM_TPL=null, LOGO='', SUM_LOGO='';
+let TPL=null, PPTX_TPL=null, SUM_TPL=null, LOGO='', SUM_LOGO='', PPTX_BG='';
 let bldgBook=[];                 /* [{no,name}] ที่เคยบันทึกไว้ ใช้ขึ้น suggestion */
 const PHOTO_PRESETS={high:{px:1400,q:0.82,label:'สูง 1400px'},
                      std:{px:1000,q:0.78,label:'แนะนำ 1000px'},
@@ -7484,7 +7486,8 @@ async function buildPresHtml(recs){
   const full=await withFlatPhotos(recs);
   const slides=full.map((r,i)=>({id:'r:'+r.id,k:'rec',rid:r.id,t:buildingFull(r)||'-',
     s:String(r.loc||'').trim(),lv:+r.level||0,h:slideHtml(r,i)}));
-  PRES_DASH.forEach(d=>slides.push({id:d.id,k:'dash',t:d.t}));
+  /* ts = ขนาดหัวเรื่อง (px บนสไลด์ 1280×720) คำนวณแบบเดียวกับ pTitle ของ .pptx */
+  PRES_DASH.forEach(d=>slides.push({id:d.id,k:'dash',t:d.t,ts:fitTitleSize(d.t,T_TITLE.cx/914400*0.96)/100*4/3}));
   const lite=recs.map(r=>{ const o={};
     Object.keys(r).forEach(k=>{ const v=r[k]; if(k==='photos'||k==='thumb') return; if(typeof v==='string'&&v.startsWith('data:')) return; o[k]=v; });
     return o; });
@@ -7500,7 +7503,8 @@ async function buildPresHtml(recs){
   return '<!doctype html>\n<html lang="th" data-theme="light"><head><meta charset="utf-8">'
     +'<meta name="viewport" content="width=device-width,initial-scale=1">'
     +'<title>'+hesc(title)+' — นำเสนอ</title>'
-    +'<style>'+css+'</style><style>'+PRES_CSS+'</style></head>'
+    +'<style>'+css+'</style><style>'+PRES_CSS+'</style>'
+    +(PPTX_BG?'<style>:root{--sbg:url("'+PPTX_BG+'")}</style>':'')+'</head>'
     +'<body class="deck"><div id="deck"></div>'
     +'<script type="application/json" id="deckData">'+presJson(data)+'<\/script>\n'
     +'<script type="application/json" id="deckNotes">'+presJson({saved:Date.now(),notes})+'<\/script>\n'
@@ -7538,13 +7542,32 @@ body.deck.notes-on .pstage{bottom:var(--pnh,30vh)}
 .pfit{position:absolute;left:50%;top:50%;transform-origin:center center}
 .pfit .slide{margin:0!important;box-shadow:none!important}
 .pfit.prec{cursor:pointer}
-.dslide{width:1280px;height:720px;box-sizing:border-box;background:var(--ground);color:var(--ink);padding:20px 26px 18px;
-  display:flex;flex-direction:column;overflow:hidden;font-size:15px;line-height:1.6}
-.dsh{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 16px;margin:0 0 10px}
-.dsh h1{margin:0;font-size:27px;font-weight:700;letter-spacing:-.015em;line-height:1.25;color:var(--ink)}
-.dsh .dbsub{order:0;flex:1 1 auto;font-size:15px}
-.dslide .dbbar{margin:0 0 12px;flex:none}
-.dsbody{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;border-radius:16px}
+/* V12.6 — สไลด์ Dashboard ใช้ธีมเดียวกับไฟล์ .pptx: พื้นหลัง Template · หัวเรื่องน้ำเงิน #002060 (ไม่มีป้าย Dashboard) ·
+   กล่องขาวขอบเทา · สีหลัก #1F4E79 · ฟอนต์ TH SarabunPSK (พิกัดแปลงจาก EMU ของ dSlide/pTitle/pBadge บนสไลด์ 1280×720) */
+.dslide{--ground:#FFFFFF;--panel:#FFFFFF;--panel-2:#F4F6F9;--sunk:#E9EDF2;--ink:#1F2937;--ink-2:#374151;--muted:#6B7280;
+  --line:#D5DBE3;--line-soft:#D5DBE3;--acc:#1F4E79;--acc-hi:#2A6299;--acc-soft:#DCE6F0;--acc-soft2:#EEF3F8;--acc-on:#FFFFFF;
+  --sh-1:none;--sh-2:0 2px 8px rgba(0,0,0,.12);--ring:0 0 0 3px rgba(31,78,121,.18);
+  --sans:"TH SarabunPSK","TH Sarabun New","Sarabun","Noto Sans Thai",Tahoma,sans-serif;
+  width:1280px;height:720px;box-sizing:border-box;position:relative;color:var(--ink);font-family:var(--sans);
+  background:#fff var(--sbg,none) 0 0/100% 100% no-repeat;padding:183px 48px 17px;
+  display:flex;flex-direction:column;overflow:hidden;font-size:17px;line-height:1.5}
+.dslide button,.dslide select,.dslide input{font-family:inherit}
+.dsh h1,.dsh .dbsub{font-size-adjust:none}
+.dsh{position:absolute;left:0;top:0;width:100%;height:0;margin:0}
+.dsh h1{position:absolute;left:47.8px;top:83.1px;width:881.9px;height:61.4px;box-sizing:border-box;padding:4.8px 9.6px;margin:0;
+  font-size:37.3px;font-weight:700;line-height:1.15;letter-spacing:0;color:#002060;overflow:hidden;white-space:nowrap}
+.dsh .dbsub{position:absolute;left:47.8px;top:144.9px;width:1184px;margin:0;padding:0 4.8px;font-size:20px;line-height:1.4;color:#6B7280;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dsh .dbsub b{color:#6B7280;font-weight:400}
+.dslide .dbbar{position:static;margin:0 0 10px;flex:none;border-radius:0;border-color:var(--line);padding:5px 10px;background:#fff;zoom:1.12}
+.dsbody{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;border-radius:0;zoom:1.22}
+.dslide .dbc,.dslide .kpi{border-radius:0;border:1px solid var(--line);box-shadow:none}
+.dslide .kpi{border-left:6px solid var(--acc)}
+.dslide .dbch h3{font-size:24px;font-weight:700;color:#1F4E79}
+.dslide .dbch .dbn{font-size:17px}
+.dslide .kpi .kh,.dslide .hero .hk{font-size:17px;font-weight:700;color:#1F4E79}
+.dslide .kpi .ks,.dslide .hero .hs{font-size:14px}
+.dslide .dbgrid,.dslide .dbkpis{gap:14px}
 .dslide .dbgrid{align-items:start}
 .dslide .dbc.w7{grid-column:span 7}.dslide .dbc.w5{grid-column:span 5}
 .dslide .dbkpis{grid-column:span 7}
@@ -7654,6 +7677,28 @@ function presRuntime(){
   Object.assign(DBS,{sheet:'',year:'',bldg:'',lv:new Set(),dm:'',dmg:'',rep:'',date:'',gap:false,dmAll:false,prioAll:false});
   if(D.db){ if(D.db.view) DBS.view=D.db.view; if(D.db.sort) DBS.sort=D.db.sort; }
   const S=D.slides, NS=S.length;
+  /* V12.6: หัวเรื่องสไลด์ = 32pt เท่ากันทุกหน้า ถ้ายาวเกิน 1 บรรทัด ย่อลงทีละ 0.5pt จนพอดีบรรทัดเดียว (วัดความกว้างจริงด้วยฟอนต์ที่ฝังในไฟล์) */
+  const T_MAX=32, T_MIN=14;
+  const tCtx=document.createElement('canvas').getContext('2d');
+  const tTxt=document.createElement('textarea');
+  function fitTitles(){
+    S.forEach(s=>{
+      if(s.k!=='rec'||!s.h) return;
+      s.h=s.h.replace(/(<div class="stitle" style="left:)([\d.]+)mm(;[^"]*?width:)([\d.]+)mm(;[^"]*?font-size:)[\d.]+pt(?:;[^"]*)?(">)([\s\S]*?)(<\/div>)/,
+        (m,a,l,b,w0,c,d,t,e)=>{
+          tTxt.innerHTML=t; const txt=tTxt.value;
+          const fit=wmm=>{ const avail=(wmm-2*2.54)/25.4*96*0.98; let pt=T_MAX;
+            for(;pt>T_MIN;pt-=0.5){ tCtx.font='700 '+pt+'pt "TH SarabunPSK","TH Sarabun New","Sarabun",sans-serif';
+              if(tCtx.measureText(txt).width<=avail) break; }
+            return pt; };
+          /* กล่องเดิมของ Template (กว้าง ~2/3 สไลด์) — ถ้าต้องย่อต่ำกว่า 24pt ขยายกล่องไปถึงขอบขวา (สไลด์รายการไม่มีป้ายทางขวา) */
+          let w=parseFloat(w0), pt=fit(w);
+          if(pt<24){ const wide=338.7-2*parseFloat(l); const p2=fit(wide); if(p2>pt){ w=wide; pt=p2; } }
+          return a+l+'mm'+b+w.toFixed(3)+'mm'+c+pt+'pt;white-space:nowrap;text-overflow:ellipsis'+d+t+e;
+        });
+    });
+  }
+  fitTitles();
   const REC_W=338.7/25.4*96, REC_H=190.5/25.4*96, DASH_W=1280, DASH_H=720;
   const dimOf=s=>s.k==='dash'?[DASH_W,DASH_H]:[REC_W,REC_H];
   let idx=0;
@@ -7677,7 +7722,8 @@ function presRuntime(){
     else if(id==='d:dmg') body=dbDamage(list,n)+dbRepair();
     else if(id==='d:heat') body=dbHeat(list);
     else body=dbPrio(list)+dbTimeline();
-    return '<div class="dslide" data-dash="'+id+'"><header class="dsh"><h1>'+hesc(meta.t)+'</h1><p class="dbsub">'+sub+'</p></header>'
+    return '<div class="dslide" data-dash="'+id+'"><header class="dsh"><h1'+(meta.ts?' style="font-size:'+meta.ts+'px"':'')+'>'+hesc(meta.t)+'</h1>'
+      +'<p class="dbsub">'+sub+'</p></header>'
       +'<div class="dbbar">'+dbFilters()+'</div><div class="dsbody"><div class="dbgrid">'+body+'</div></div></div>'
       .replace('กดรายการเพื่อเปิดแก้ไขในหน้า Data Collection','กดรายการเพื่อไปสไลด์ของจุดนั้น')
       .replace(/title="เปิดแก้ไขรายการ /g,'title="ไปสไลด์ของจุด ');
@@ -7735,6 +7781,19 @@ function presRuntime(){
     syncNotesUi(); syncPresenter();
     try{ history.replaceState(null,'','#'+(idx+1)); }catch(e){}
     document.title=(idx+1)+'/'+NS+' · '+D.title;
+    preload();
+  }
+  /* V12.6: เตรียมสไลด์ข้างเคียงไว้ล่วงหน้า (ถอดรหัสรูปก่อน) — เลื่อนเปลี่ยนหน้าแล้วไม่กระตุก */
+  let preT=0;
+  function preload(){
+    clearTimeout(preT);
+    preT=setTimeout(()=>{
+      [idx+1,idx-1,idx+2].forEach(i=>{
+        if(i<0||i>=NS||cache[i]||S[i].k==='dash') return;
+        const el=cache[i]=makeFit(i);
+        el.querySelectorAll('img').forEach(im=>{ if(im.decode) im.decode().catch(()=>{}); });
+      });
+    },60);
   }
   function go(i){ i=Math.max(0,Math.min(NS-1,i)); if(i===idx&&curEl) return; idx=i; show(); }
   const next=()=>{ if(idx<NS-1) go(idx+1); };
@@ -7780,6 +7839,38 @@ function presRuntime(){
       if(j>=0) go(j); else toast('จุดนี้ไม่ได้อยู่ในชุดสไลด์ที่ส่งออก'); return false; }
     return false;
   }
+  /* V12.6: ลูกกลิ้งเมาส์ / ทัชแพด เปลี่ยนสไลด์ — ถ้าอยู่ในกล่อง Dashboard ที่ยังเลื่อนต่อได้ ให้เลื่อนกล่องก่อน
+     · ลูกกลิ้งเมาส์ (ค่า delta ต่อครั้งใหญ่): 1 คลิก = 1 สไลด์ ทันที เว้นช่วงสั้น ๆ คงที่ (ไม่ต่อเวลาเมื่อหมุนต่อ)
+     · ทัชแพด (delta เล็ก ต่อเนื่อง + แรงเหวี่ยง): 1 การปัด = 1 สไลด์ แล้วรอจนนิ้ว/แรงเหวี่ยงหยุดก่อนรับการปัดใหม่ */
+  let wAcc=0, wLast=0, wFired=false, wNext=0;
+  const WHEEL_GAP=150, PAD_IDLE=140, PAD_STEP=50;
+  function onWheel(e){
+    if(e.ctrlKey||e.defaultPrevented) return;
+    if(e.target.closest&&e.target.closest('textarea,select,.pnotes,.pgrid,.phelp')) return;
+    const dy=Math.abs(e.deltaY)>=Math.abs(e.deltaX)?e.deltaY:e.deltaX;
+    if(!dy) return;
+    const sb=e.target.closest&&e.target.closest('.dsbody');
+    if(sb&&sb.scrollHeight>sb.clientHeight+1){
+      const atTop=sb.scrollTop<=0, atEnd=sb.scrollTop+sb.clientHeight>=sb.scrollHeight-1;
+      if((dy<0&&!atTop)||(dy>0&&!atEnd)){ wAcc=0; return; }
+    }
+    e.preventDefault();
+    const now=performance.now(), px=e.deltaMode===1?dy*33:(e.deltaMode===2?dy*800:dy);
+    const gap=now-wLast; wLast=now;
+    const notch=e.deltaMode!==0||(Math.abs(px)>=50&&Number.isInteger(px));
+    if(notch){
+      wAcc=0; wFired=false;
+      if(now<wNext) return;
+      wNext=now+WHEEL_GAP;
+      if(px>0) next(); else prev();
+      return;
+    }
+    if(gap>PAD_IDLE){ wAcc=0; wFired=false; }      /* เริ่มการปัดครั้งใหม่ */
+    if(wFired) return;                               /* ยังเป็นแรงเหวี่ยงของการปัดเดิม */
+    wAcc+=px;
+    if(Math.abs(wAcc)>=PAD_STEP){ wFired=true; if(wAcc>0) next(); else prev(); wAcc=0; }
+  }
+  stage.addEventListener('wheel',onWheel,{passive:false});
   let swipe=null, swiped=false;
   stage.addEventListener('pointerdown',e=>{ swipe={x:e.clientX,y:e.clientY}; swiped=false; });
   stage.addEventListener('pointerup',e=>{ if(!swipe) return; const dx=e.clientX-swipe.x, dy=e.clientY-swipe.y; swipe=null;
@@ -7955,6 +8046,7 @@ function presRuntime(){
         +PB('close','x','ปิด Presenter view')+'</div></body></html>';
     const d=w.document; d.open(); d.write(html); d.close();
     d.addEventListener('keydown',e=>onKey(e,w));
+    d.addEventListener('wheel',e=>{ if(!e.target.closest||!e.target.closest('.pv-box')) return; onWheel(e); },{passive:false});
     d.addEventListener('click',e=>{ const b=e.target.closest('[data-pv]'); if(!b) return; const a=b.dataset.pv;
       if(a==='prev') prev(); else if(a==='next') next(); else if(a==='save') save(w);
       else if(a==='close') w.close();
@@ -7995,6 +8087,13 @@ function presRuntime(){
     const ds=PW.document.querySelector('#pvCur .dsbody'); if(ds) ds.scrollTop=e.target.scrollTop; } },true);
 
   show();
+  /* ฟอนต์ฝังโหลดเสร็จแล้ว → วัดหัวเรื่องใหม่ด้วยฟอนต์จริง แล้ววาดสไลด์ใหม่ */
+  if(document.fonts&&document.fonts.load){
+    document.fonts.load('700 32pt "TH SarabunPSK"').then(()=>{
+      const before=S.map(s=>s.h); fitTitles();
+      if(S.some((s,i)=>s.h!==before[i])){ cache.fill(null); curEl=null; show(); }
+    }).catch(()=>{});
+  }
   if(dirty) toast('มีโน้ตที่ยังไม่ได้บันทึกลงไฟล์ (กู้คืนจากเบราว์เซอร์นี้) — กด Ctrl+S เพื่อบันทึก',5000);
 }
 
@@ -11587,6 +11686,12 @@ new MutationObserver(()=>moSwitch.syncAll()).observe(document.getElementById('fi
   }catch(e){ console.warn(e); toast('อ่านไฟล์ต้นแบบตารางสรุปไม่สำเร็จ'); }
   try{ const b2=atob(PPTX_B64); PPTX_TPL=new Uint8Array(b2.length);
     for(let i=0;i<b2.length;i++) PPTX_TPL[i]=b2.charCodeAt(i);
+    /* V12.6: ภาพพื้นหลังของ slideLayout ในต้นแบบ — ใช้กับพรีวิวสไลด์และไฟล์นำเสนอ .html ให้หน้าตาตรงกับ .pptx */
+    const pf=await zipRead(PPTX_TPL);
+    const bg=pf.get('ppt/media/image1.jpeg');
+    if(bg){ let s3=''; for(let i=0;i<bg.length;i+=8192) s3+=String.fromCharCode.apply(null,bg.subarray(i,i+8192));
+      PPTX_BG='data:image/jpeg;base64,'+btoa(s3);
+      document.documentElement.style.setProperty('--sbg','url("'+PPTX_BG+'")'); }
   }catch(e){ console.warn(e); }
 
   try{ DB=await idb(); }
