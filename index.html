@@ -3360,8 +3360,12 @@ const SUM_SMALL_TW=Math.round(325*12/14);   /* ความสูง 1 บรร
            + ย่อหน้าเว้นบนสุดของหน้า 336 + ย่อหน้าเว้นเหนือตาราง 336
            + หัวตารางย่อย 650 (2 บรรทัด) + ย่อหน้าเว้นใต้ตาราง 336
            + แถวหมายเหตุ 350 + แถวคำอธิบายระดับ 650   รวม ≈ 4968
-   เหลือ 9071 − 4968 ≈ 4100 → ใช้ 3900 กันเหลื่อมไว้ */
-const SUM_BODY_TW=3900;
+   เหลือ 9071 − 4968 ≈ 4100 → ใช้ 3900 กันเหลื่อมไว้
+   V12.7: แถวเนื้อหา (ช่องที่มีตารางย่อย) สูงคงที่ SUM_ROW_H ทุกหน้า (hRule="exact")
+   แถวหมายเหตุจึงอยู่ท้ายกระดาษเสมอ — ใส่แถวข้อมูลได้ไม่เกิน SUM_ROW_H − ส่วนหัว/ระยะเว้นในช่อง (SUM_ROW_OVH) */
+const SUM_ROW_H=4900;      /* ความสูงแถวเนื้อหา (twips) — ตาราง+หมายเหตุ+ย่อหน้าท้ายเอกสาร (ขนาดปกติ) พอดี 1 หน้า A4 แนวนอนใน Word */
+const SUM_ROW_OVH=1150;    /* เว้นบน 336 + หัวตารางย่อย 650 + เว้นล่าง (tcMar) ~160 — วัดจาก PDF ที่ Word สร้างจริง */
+const SUM_BODY_TW=SUM_ROW_H-SUM_ROW_OVH;
 const SUM_PAD_TW=216;      /* ขอบในช่องตาราง ซ้าย+ขวา */
 /* สระบน-ล่าง วรรณยุกต์ และอักขระความกว้างศูนย์ — ไม่กินความกว้างบรรทัด */
 const SUM_ZW=/[ัิ-ฺ็-๎​‌‍]/;
@@ -3398,7 +3402,9 @@ function sumCellPlan(text,colw){
 /* ความสูงโดยประมาณของ 1 แถว + ช่องไหนต้องย่อตัวอักษรบ้าง */
 function sumRowPlan(cells){
   let tw=SUM_LINE_TW; const small=[];
-  cells.forEach((t,i)=>{ const pl=sumCellPlan(t,SUM_COLW[i]); small[i]=pl.small; tw=Math.max(tw,pl.tw); });
+  cells.forEach((t,i)=>{
+    if(i===0){ small[i]=false; return; }   /* เลขลำดับ (เช่น 3.11) อยู่บรรทัดเดียวเสมอใน Word — ไม่นับ */
+    const pl=sumCellPlan(t,SUM_COLW[i]); small[i]=pl.small; tw=Math.max(tw,pl.tw); });
   return {tw:tw,small:small};
 }
 
@@ -3504,6 +3510,7 @@ async function renderSummary(tplBytes,pages){
      — ลำดับแท็กใน tcPr บังคับให้ tcMar อยู่ก่อน vAlign */
   /* ตารางย่อยชิดด้านบนของช่อง (vAlign top) เว้นจากตารางบน 1 บรรทัด 14pt */
   const r7pre=r7.slice(0,i0)
+    .replace(/<w:trHeight [^>]*\/>/,'<w:cantSplit/><w:trHeight w:val="'+SUM_ROW_H+'" w:hRule="exact"/>')
     .replace('<w:hideMark/>','')
     .replace(/<w:vAlign w:val="[a-z]+"\/>/,SUM_TCMAR_B+'<w:vAlign w:val="top"/>')
     .replace(/<w:p(?:\s[^>]*)?>(?:(?!<\/w:p>)[\s\S])*<\/w:p>$/,'')+SUM_GAP_P;
@@ -3536,8 +3543,12 @@ async function renderSummary(tplBytes,pages){
     return uniquifyIds(pre+body+'</w:tbl>',k);
   });
 
-  /* ขึ้นหน้าใหม่แล้วเว้น 1 บรรทัดก่อนตาราง ไม่ให้ชิดหัวกระดาษ (หน้าแรกมีย่อหน้านี้อยู่แล้วในต้นแบบ) */
-  const SUM_BREAK=PAGE_BREAK+'<w:p><w:pPr><w:pStyle w:val="NoSpacing"/></w:pPr></w:p>';
+  /* ขึ้นหน้าใหม่แล้วเว้น 1 บรรทัดก่อนตาราง ไม่ให้ชิดหัวกระดาษ (หน้าแรกมีย่อหน้านี้อยู่แล้วในต้นแบบ)
+     V12.7: ใช้ pageBreakBefore ที่ย่อหน้าเว้นบรรทัดของหน้าถัดไป — ไม่มีย่อหน้าตัวแบ่งหน้าค้างใต้ตาราง
+     (ตารางเต็มหน้าแล้ว ย่อหน้านั้นจะล้นไปเกิดหน้าว่าง)
+     · ย่อหน้าท้ายเอกสารคงขนาดปกติของต้นแบบ — ห้ามย่อตัวอักษรเหลือ 1pt (โปรแกรมป้องกันไวรัส เช่น Cortex XDR
+       มองว่าเป็นการซ่อนข้อความในเอกสาร แล้วบล็อกไฟล์) — เผื่อที่ให้ย่อหน้านี้ไว้แล้วใน SUM_ROW_H */
+  const SUM_BREAK='<w:p><w:pPr><w:pStyle w:val="NoSpacing"/><w:pageBreakBefore/></w:pPr></w:p>';
   doc=head+units.join(SUM_BREAK)+tail;
   const h0=pages[0]||{};
   if(files.get('word/header1.xml'))
