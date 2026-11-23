@@ -3450,7 +3450,9 @@ const SUM_SMALL_TW=Math.round(325*12/14);   /* ความสูง 1 บรร
            + แถวหมายเหตุ 350 + แถวคำอธิบายระดับ 650   รวม ≈ 4968
    เหลือ 9071 − 4968 ≈ 4100 → ใช้ 3900 กันเหลื่อมไว้
    V12.7: แถวเนื้อหา (ช่องที่มีตารางย่อย) สูงคงที่ SUM_ROW_H ทุกหน้า (hRule="exact")
-   แถวหมายเหตุจึงอยู่ท้ายกระดาษเสมอ — ใส่แถวข้อมูลได้ไม่เกิน SUM_ROW_H − ส่วนหัว/ระยะเว้นในช่อง (SUM_ROW_OVH) */
+   แถวหมายเหตุจึงอยู่ท้ายกระดาษเสมอ — ใส่แถวข้อมูลได้ไม่เกิน SUM_ROW_H − ส่วนหัว/ระยะเว้นในช่อง (SUM_ROW_OVH)
+   V13.3: เปลี่ยนเป็น hRule="atLeast" — สูงอย่างน้อย SUM_ROW_H (หน้าตาเหมือนเดิมในกรณีปกติ)
+   แต่ถ้าข้อความยาวกว่าที่ประมาณไว้ แถวจะขยายตาม แทนที่ Word จะตัดข้อความทิ้งเงียบ ๆ แบบ exact */
 const SUM_ROW_H=4900;      /* ความสูงแถวเนื้อหา (twips) — ตาราง+หมายเหตุ+ย่อหน้าท้ายเอกสาร (ขนาดปกติ) พอดี 1 หน้า A4 แนวนอนใน Word */
 const SUM_ROW_OVH=1150;    /* เว้นบน 336 + หัวตารางย่อย 650 + เว้นล่าง (tcMar) ~160 — วัดจาก PDF ที่ Word สร้างจริง */
 const SUM_BODY_TW=SUM_ROW_H-SUM_ROW_OVH;
@@ -3598,7 +3600,7 @@ async function renderSummary(tplBytes,pages){
      — ลำดับแท็กใน tcPr บังคับให้ tcMar อยู่ก่อน vAlign */
   /* ตารางย่อยชิดด้านบนของช่อง (vAlign top) เว้นจากตารางบน 1 บรรทัด 14pt */
   const r7pre=r7.slice(0,i0)
-    .replace(/<w:trHeight [^>]*\/>/,'<w:cantSplit/><w:trHeight w:val="'+SUM_ROW_H+'" w:hRule="exact"/>')
+    .replace(/<w:trHeight [^>]*\/>/,'<w:cantSplit/><w:trHeight w:val="'+SUM_ROW_H+'" w:hRule="atLeast"/>')
     .replace('<w:hideMark/>','')
     .replace(/<w:vAlign w:val="[a-z]+"\/>/,SUM_TCMAR_B+'<w:vAlign w:val="top"/>')
     .replace(/<w:p(?:\s[^>]*)?>(?:(?!<\/w:p>)[\s\S])*<\/w:p>$/,'')+SUM_GAP_P;
@@ -7490,7 +7492,7 @@ function summaryPages(recs){
     cells.forEach(c=>{
       const pl=sumRowPlan(c);
       if(cur.length&&used+pl.tw>SUM_BODY_TW){ pages.push(Object.assign({},meta,{rows:cur})); cur=[]; used=0; }
-      cur.push({c:c,s:pl.small}); used+=pl.tw;
+      cur.push({c:c,s:pl.small,over:pl.tw>SUM_BODY_TW}); used+=pl.tw;   /* V13.3: over = ยาวเกิน 1 หน้า */
     });
     pages.push(Object.assign({},meta,{rows:cur}));
   });
@@ -7502,9 +7504,13 @@ async function exportSummary(all){
   if(!SUM_TPL){ toast('อ่านไฟล์ต้นแบบตารางสรุปไม่สำเร็จ'); return; }
   const pages=summaryPages(recs);
   toast('กำลังสร้างตารางสรุป '+pages.length+' หน้า…',9000);
+  /* V13.3: รายการที่ข้อความยาวเกิน 1 หน้า — แถวจะขยายจนแถวหมายเหตุเลื่อนไปหน้าถัดไป ให้ผู้ใช้รู้ว่าต้องตรวจ */
+  const over=[]; pages.forEach(pg=>(pg.rows||[]).forEach(r=>{ if(r.over) over.push(r.c[0]); }));
   try{ const bytes=await renderSummary(SUM_TPL,pages);
     await deliver('Inspection-Summary-'+stamp()+'.docx',bytes,
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    if(over.length) toast('คำเตือน: รายการ '+over.slice(0,8).join(', ')+(over.length>8?' และอีก '+(over.length-8)+' รายการ':'')
+      +' ข้อความยาวเกิน 1 หน้า — ตรวจหน้านั้นในไฟล์ Word หรือย่อข้อความให้สั้นลง',12000);
   }catch(e){ toast(e.code==='extension_not_enabled'
       ?'มุมมองนี้ยังบันทึก .docx ไม่ได้ — ดาวน์โหลดไฟล์แอปไปเปิดในเครื่องแล้วสั่งอีกครั้ง'
       :'สร้างตารางสรุปไม่สำเร็จ: '+(e.message||e)); } }
@@ -8614,8 +8620,12 @@ async function applyProject(text,mode){
   let o;
   try{ o=JSON.parse(text); }catch(e){ toast('อ่านไฟล์ไม่ได้ — ไม่ใช่ไฟล์งานที่ถูกต้อง'); return; }
   if(!o||!Array.isArray(o.records)){ toast('รูปแบบไฟล์ไม่ถูกต้อง'); return; }
-  /* V13: ทำความสะอาดข้อมูลจากไฟล์ก่อนใช้ (กันไฟล์ที่ถูกดัดแปลงฝังโค้ด) */
+  /* V13: ทำความสะอาดข้อมูลจากไฟล์ก่อนใช้ (กันไฟล์ที่ถูกดัดแปลงฝังโค้ด)
+     V13.3: นับรูปก่อน/หลัง — รูปที่รูปแบบไม่ถูกต้องถูกข้าม ต้องแจ้งผู้ใช้ ไม่ให้หายเงียบ */
+  const phCount=a=>a.reduce((n,r)=>n+(r&&Array.isArray(r.photos)?r.photos.slice(0,4).filter(Boolean).length:0),0);
+  const phBefore=phCount(o.records);
   o.records=o.records.map(sanRecord).filter(Boolean);
+  const phDropped=phBefore-phCount(o.records);
   o.records.forEach(r=>{ if(!r.id) r.id='r'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); });
   o.defaults=o.defaults?sanFlat(o.defaults):null;
   o.dmcustom=Array.isArray(o.dmcustom)?o.dmcustom.map(sanDm).filter(Boolean):null;
@@ -8647,7 +8657,8 @@ async function applyProject(text,mode){
   records=await dbAll('records');
   dirty=false; renderFileState(); estimateSizes(); await renderList(); await renderPreview();
   renderRecNav(); if(document.body.dataset.view==='dash') renderDash();
-  toast((mode==='replace'?'เปิดไฟล์งานแล้ว ':'รวมข้อมูลแล้ว ')+n+' รายการ');
+  toast((mode==='replace'?'เปิดไฟล์งานแล้ว ':'รวมข้อมูลแล้ว ')+n+' รายการ'
+    +(phDropped?' · ข้ามรูปที่รูปแบบไม่ถูกต้อง '+phDropped+' รูป (ไม่ได้นำเข้า)':''),phDropped?9000:undefined);
 }
 
 async function openProject(mode){
@@ -8688,7 +8699,9 @@ function ask(opts){
     $('#dlgBody').innerHTML=opts.body||'';
     const box=$('#dlgBtns'); box.innerHTML='';
     let settled=false;
-    const done=v=>{ if(settled) return; settled=true; try{ d.close(); }catch(e){} res(v); };
+    /* V13.3: ถอด onclose/oncancel ก่อนปิด — event close ของกล่องนี้ยิงทีหลังแบบ async
+       ถ้าไม่ถอด จะไปปิดกล่อง ask() ถัดไปที่เปิดต่อทันทีแทน */
+    const done=v=>{ if(settled) return; settled=true; d.onclose=null; d.oncancel=null; try{ d.close(); }catch(e){} res(v); };
     box.className='dlgbtns'+(opts.stack?' stack':'');
     let zone=null;
     (opts.buttons||[]).forEach(b=>{
@@ -9032,7 +9045,6 @@ async function hpWelcomeShow(){
       body:'เคยใช้งานแอปนี้มาก่อนหรือไม่?',
       buttons:[{v:'new',label:'ยังไม่เคย',kind:'pri'},{v:'used',label:'เคยใช้แล้ว'}]});
     if(a!=='new'){ markSeen(); return; }
-    await new Promise(r=>setTimeout(r,120));   /* ให้ event close ของกล่องแรกจบก่อน ไม่งั้นจะปิดกล่องที่สองทันที */
     const b=await ask({title:'สอนการใช้งาน',
       body:'ต้องการให้แนะนำการใช้งานทีละขั้นตอนหรือไม่?<br><small style="color:var(--muted)">ประมาณ 30 วินาที · กด <b>ยกเลิกการสอน</b> หรือ <kbd>Esc</kbd> ได้ทุกเมื่อ · เปิดสอนใหม่ได้ที่ปุ่ม ? มุมขวาบน</small>',
       buttons:[{v:'go',label:'เริ่มสอนการใช้งาน',kind:'pri',icon:'sparkle'},{v:'no',label:'ไม่ต้อง'}]});
@@ -9215,7 +9227,7 @@ async function hpDownload(kind,dev){
    · เช็กลิสต์ "เริ่มต้นใช้งาน" ติ๊กให้เองเมื่อผู้ใช้ทำจริง · ทำ Tutorial ต่อจากขั้นที่ค้าง · ติดต่อผู้ดูแล
    ================================================================== */
 /* แก้ชื่อ/ช่องทางติดต่อผู้ดูแลได้ที่นี่ (detail เช่น เบอร์โทร หรือ Line ID — เว้นว่างได้) */
-const APP_VER='V13.2';
+const APP_VER='V13.3';
 const HP_CONTACT={name:'Admin หบฟ4-ธ.',org:'แผนกบำรุงรักษาโยธาโรงไฟฟ้า 4 (หบฟ4-ธ.)',detail:''};
 Object.assign(ICONS,{
   copy:'<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/>',
